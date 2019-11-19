@@ -45,7 +45,8 @@ Configure autologin for `ttyS0` or another terminal device you've chosen.
 
 ## Prerequisities
 
-- Download or install the the vmlinux to your local machine.
+- Download the unstripped vmlinux to your local machine, or
+- Download the vmlinux and the debug symbols.
 - Download the kernel sources corresponding to the given kernel build.
 
 ## On host, create a PTY mapping to the VM named pipe
