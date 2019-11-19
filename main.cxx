@@ -235,8 +235,8 @@ int main(int argc, char** argv)
 
 				bool rc = WriteFile(pipe, buf, bytes, &bytes, &ov);
 				DWORD er = GetLastError();
-				DWORD res = convey_get_ov_result(pipe, ov, bytes, rc, er);
-				if (!res) {
+				rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
+				if (!rc) {
 					is_error = true;
 					return;
 				}
@@ -257,8 +257,8 @@ int main(int argc, char** argv)
 			
 			bool rc = ReadFile(pipe, buf, sizeof buf, &bytes, &ov);
 			DWORD er = GetLastError();
-			DWORD res = convey_get_ov_result(pipe, ov, bytes, rc, er);
-			if (!res) {
+			rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
+			if (!rc) {
 				is_error = true;
 				return;
 			}
