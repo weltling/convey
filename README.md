@@ -20,9 +20,11 @@ Hypervisors like Hyper-V provide a functionality to emulate a serial port in the
 ## On host, conifgure a com port
 
 Assign a named pipe that will be passed as a COM1 into a VM.
+
 `Set-VMComPort -VMName <vm name> -Number 1 -Path \\.\pipe\<pipe name>`
 
 View configured COM ports on a VM.
+
 `Get-VMComPort -VMName <vm name>`
 
 ## Inside the VM
@@ -89,12 +91,12 @@ Forgot to bring kernel into the debugging mode?
 
 # Links
 
-https://www.kernel.org/doc/html/latest/admin-guide/serial-console.html
-https://www.kernel.org/doc/html/v4.17/dev-tools/kgdb.html
-https://www.elinux.org/Debugging_The_Linux_Kernel_Using_Gdb
-http://man7.org/linux/man-pages/man1/stty.1.html
-https://linux.die.net/man/1/socat
-https://stackoverflow.com/questions/14584504/problems-to-connect-gdb-over-an-serial-port-to-an-kgdb-build-kernel
+- https://www.kernel.org/doc/html/latest/admin-guide/serial-console.html
+- https://www.kernel.org/doc/html/v4.17/dev-tools/kgdb.html
+- https://www.elinux.org/Debugging_The_Linux_Kernel_Using_Gdb
+- http://man7.org/linux/man-pages/man1/stty.1.html
+- https://linux.die.net/man/1/socat
+- https://stackoverflow.com/questions/14584504/problems-to-connect-gdb-over-an-serial-port-to-an-kgdb-build-kernel
 
 # TODO
 
