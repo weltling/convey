@@ -34,6 +34,8 @@
 #include <iostream>
 #include <thread>
 #include <atomic>
+
+#include "popl.hpp"
 /* }}} */
 
 /* {{{ Global decls */
@@ -47,6 +49,17 @@ static bool is_console = false;
 static std::atomic<bool> is_error{false};
 
 #define BUF_SIZE 4096
+
+struct convey_conf {
+	bool verbose;
+	std::string pipe_path;
+};
+/*static convey_conf conf = {
+	.verbose = false,
+	.pipe_path = std::string("")
+};*/
+static convey_conf conf = {0};
+
 /* }}} */
 
 /* {{{ Helper routines */
@@ -66,6 +79,8 @@ static void convey_error(DWORD c = -1)
 		LocalFree(buf);
 	}
 }/*}}}*/
+
+
 
 static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED& ov, DWORD& bytes, bool rc, DWORD er)
 {/*{{{*/
@@ -107,6 +122,57 @@ static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED& ov, DWORD& bytes, bool r
 	return true;
 }/*}}}*/
 
+static void convey_usage_print(popl::OptionParser& op)
+{
+	std::cerr << "Usage: convey [options] [\\\\.\\pipe\\path_to_pipe]" << std::endl;
+	std::cout << op << std::endl;
+}
+
+static bool convey_conf_setup(int argc, char **argv)
+{/*{{{*/
+	popl::OptionParser op{};
+	auto help_opt = op.add<popl::Switch>("h", "help", "This help message.");
+	auto pipe_path_opt = op.add<popl::Value<std::string>>("p", "pipe", "Named pipe path.");
+
+	try {
+		op.parse(argc, argv);
+
+		if (op.unknown_options().size() > 0) {
+			for (const auto& unknown_option: op.unknown_options()) {
+				std::cerr << argv[0] << ": unknown option '" << unknown_option << "'" << std::endl;
+				std::cerr << "Try 'convey --help' for more information." << std::endl;
+				return false;
+			}
+		}
+
+		if (help_opt->count() >= 1) {
+			convey_usage_print(op);
+			return false;
+		}
+		if (pipe_path_opt->count() >= 1) {
+			conf.pipe_path = pipe_path_opt->value();
+		} else if (op.non_option_args().size() >= 1) {
+			// If not passed explicitly by opt, pipe is passed just as a first arg.
+			conf.pipe_path = op.non_option_args()[0];
+		} else {
+			std::cerr << argv[0] << ": empty pipe path" << std::endl;
+			std::cerr << "Try 'convey --help' for more information." << std::endl;
+			return false;
+		}
+	} catch (const popl::invalid_option& e) {
+		std::cerr << "Invalid option " << e.what() << std::endl;
+		return false;
+	}
+
+
+	return true;
+}/*}}}*/
+
+static bool convey_conf_shutdown()
+{/*{{{*/
+	return true;
+}/*}}}*/
+
 static void convey_shutdown(void);
 
 static BOOL WINAPI ctrl_handler(DWORD sig)
@@ -136,11 +202,15 @@ static void restore_console(void)
 	SetConsoleCP(orig_ccp);
 }/*}}}*/
 
-static bool convey_startup(const char *pipe_path)
+static bool convey_startup(int argc, char **argv)
 {/*{{{*/
 	DWORD rc = -1;
 
-	pipe = CreateFile(pipe_path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+	if (!convey_conf_setup(argc, argv)) {
+		return false;
+	}
+
+	pipe = CreateFile(conf.pipe_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
 	rc = GetLastError();
 	if (INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc) {
 		convey_error(rc);
@@ -195,17 +265,15 @@ static void convey_shutdown(void)
 	if (is_console) {
 		restore_console();
 	}
+
+	convey_conf_shutdown();
 }/*}}}*/
 /* }}} */
 
 int main(int argc, char** argv)
 {/*{{{*/
-	if (argc < 2) {
-		std::cout << ": Usage: " << argv[0] << "\\\\.\\path\\to\\pipe\n" << std::endl;
-		return 0;
-	}
 
-	if (!convey_startup(argv[1])) {
+	if (!convey_startup(argc, argv)) {
 		return 1;
 	}
 
