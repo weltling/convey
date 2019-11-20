@@ -49,11 +49,18 @@ static bool is_console = false;
 static std::atomic<bool> is_error{false};
 
 #define BUF_SIZE 4096
+#define VERSION "0.0.1"
 
 struct convey_conf {
 	bool verbose;
 	std::string pipe_path;
 	double pipe_poll;
+};
+
+enum convey_setup_status {
+	convey_setup_ok,
+	convey_setup_exit_ok,
+	convey_setup_exit_err
 };
 /*static convey_conf conf = {
 	.verbose = false,
@@ -130,7 +137,7 @@ static void convey_usage_print(popl::OptionParser& op)
 	std::cout << op << std::endl;
 }
 
-static bool convey_conf_setup(int argc, char **argv)
+static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	popl::OptionParser op{};
 	auto help_opt = op.add<popl::Switch>("h", "help", "This help message.");
@@ -145,13 +152,13 @@ static bool convey_conf_setup(int argc, char **argv)
 			for (const auto& unknown_option: op.unknown_options()) {
 				std::cerr << argv[0] << ": unknown option '" << unknown_option << "'" << std::endl;
 				std::cerr << "Try 'convey --help' for more information." << std::endl;
-				return false;
+				return convey_setup_exit_err;
 			}
 		}
 
 		if (help_opt->count() >= 1) {
 			convey_usage_print(op);
-			return false;
+			return convey_setup_exit_ok;
 		}
 
 		if (verbose_opt->count() >= 1) {
@@ -166,7 +173,7 @@ static bool convey_conf_setup(int argc, char **argv)
 		} else {
 			std::cerr << argv[0] << ": empty pipe path" << std::endl;
 			std::cerr << "Try 'convey --help' for more information." << std::endl;
-			return false;
+			return convey_setup_exit_err;
 		}
 
 		if (pipe_poll_unavail_opt->is_set()) {
@@ -175,11 +182,10 @@ static bool convey_conf_setup(int argc, char **argv)
 
 	} catch (const popl::invalid_option& e) {
 		std::cerr << "Invalid option " << e.what() << std::endl;
-		return false;
+		return convey_setup_exit_err;
 	}
 
-
-	return true;
+	return convey_setup_ok;
 }/*}}}*/
 
 static bool convey_conf_shutdown()
@@ -216,12 +222,13 @@ static void restore_console(void)
 	SetConsoleCP(orig_ccp);
 }/*}}}*/
 
-static bool convey_startup(int argc, char **argv)
+static convey_setup_status convey_startup(int argc, char **argv)
 {/*{{{*/
 	DWORD rc = -1;
 
-	if (!convey_conf_setup(argc, argv)) {
-		return false;
+	convey_setup_status _rc = convey_conf_setup(argc, argv);
+	if(convey_setup_ok != _rc) {
+		return _rc;
 	}
 
 	if (conf.verbose) {
@@ -243,7 +250,7 @@ static bool convey_startup(int argc, char **argv)
 	} while (true);
 	if (INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc) {
 		convey_error(rc);
-		return false;
+		return convey_setup_exit_err;
 	}
 	if (conf.verbose) {
 		std::cout << "Connection established in " << (elapsed/1000) << " seconds" << std::endl;
@@ -254,14 +261,14 @@ static bool convey_startup(int argc, char **argv)
 	if (INVALID_HANDLE_VALUE == in) {
 		convey_error();
 		convey_shutdown();
-		return false;
+		return convey_setup_exit_err;
 	}
 	/* This could be something else, too. */
 	out = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (INVALID_HANDLE_VALUE == out) {
 		convey_error();
 		convey_shutdown();
-		return false;
+		return convey_setup_exit_err;
 	}
 
 	e0 = CreateEvent(nullptr, false, false, nullptr);
@@ -273,7 +280,7 @@ static bool convey_startup(int argc, char **argv)
 		setup_console();
 	}
 
-	return true;
+	return convey_setup_ok;
 }/*}}}*/
 
 static void convey_shutdown(void)
@@ -305,8 +312,11 @@ static void convey_shutdown(void)
 int main(int argc, char** argv)
 {/*{{{*/
 
-	if (!convey_startup(argc, argv)) {
-		return 1;
+	switch (convey_startup(argc, argv)) {
+		case convey_setup_exit_err:
+			return 1;
+		case convey_setup_exit_ok:
+			return 0;
 	}
 
 	std::thread t0([]() {
