@@ -136,7 +136,7 @@ static bool convey_conf_setup(int argc, char **argv)
 	auto help_opt = op.add<popl::Switch>("h", "help", "This help message.");
 	auto pipe_path_opt = op.add<popl::Value<std::string>>("n", "named-pipe", "Named pipe path.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.");
-	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Be verbose");
+	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
 
 	try {
 		op.parse(argc, argv);
