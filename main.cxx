@@ -53,10 +53,12 @@ static std::atomic<bool> is_error{false};
 struct convey_conf {
 	bool verbose;
 	std::string pipe_path;
+	double pipe_poll;
 };
 /*static convey_conf conf = {
 	.verbose = false,
-	.pipe_path = std::string("")
+	.pipe_path = std::string(""),
+	.pall = 0
 };*/
 static convey_conf conf = {0};
 
@@ -74,7 +76,7 @@ static void convey_error(DWORD c = -1)
 	);
 
 	if (ret) {
-		std::cout << buf << std::endl;
+		std::cout << "convey: " << buf << std::endl;
 
 		LocalFree(buf);
 	}
@@ -132,7 +134,9 @@ static bool convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	popl::OptionParser op{};
 	auto help_opt = op.add<popl::Switch>("h", "help", "This help message.");
-	auto pipe_path_opt = op.add<popl::Value<std::string>>("p", "pipe", "Named pipe path.");
+	auto pipe_path_opt = op.add<popl::Value<std::string>>("n", "named-pipe", "Named pipe path.");
+	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.");
+	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Be verbose");
 
 	try {
 		op.parse(argc, argv);
@@ -149,7 +153,12 @@ static bool convey_conf_setup(int argc, char **argv)
 			convey_usage_print(op);
 			return false;
 		}
-		if (pipe_path_opt->count() >= 1) {
+
+		if (verbose_opt->count() >= 1) {
+			conf.verbose = true;
+		}
+
+		if (pipe_path_opt->is_set()) {
 			conf.pipe_path = pipe_path_opt->value();
 		} else if (op.non_option_args().size() >= 1) {
 			// If not passed explicitly by opt, pipe is passed just as a first arg.
@@ -159,6 +168,11 @@ static bool convey_conf_setup(int argc, char **argv)
 			std::cerr << "Try 'convey --help' for more information." << std::endl;
 			return false;
 		}
+
+		if (pipe_poll_unavail_opt->is_set()) {
+			conf.pipe_poll = pipe_poll_unavail_opt->value();
+		}
+
 	} catch (const popl::invalid_option& e) {
 		std::cerr << "Invalid option " << e.what() << std::endl;
 		return false;
@@ -210,11 +224,29 @@ static bool convey_startup(int argc, char **argv)
 		return false;
 	}
 
-	pipe = CreateFile(conf.pipe_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-	rc = GetLastError();
+	if (conf.verbose) {
+		std::cout << "Polling the pipe '" << conf.pipe_path << "' for " << conf.pipe_poll << " seconds" << std::endl;
+	}
+	size_t elapsed = 0,
+		   step = 300 /* milliseconds*/;
+	do {
+		pipe = CreateFile(conf.pipe_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+		rc = GetLastError();
+		if (INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc) {
+			if (elapsed/1000 < conf.pipe_poll) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(step));
+				elapsed += step;
+				continue;
+			}
+		}
+		break;
+	} while (true);
 	if (INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc) {
 		convey_error(rc);
 		return false;
+	}
+	if (conf.verbose) {
+		std::cout << "Connection established in " << (elapsed/1000) << " seconds" << std::endl;
 	}
 
 	/* This could be something else, too. */
