@@ -126,7 +126,7 @@ static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED& ov, DWORD& bytes, bool r
 
 static void convey_usage_print(popl::OptionParser& op)
 {
-	std::cerr << "Usage: convey [options] [\\\\.\\pipe\\path_to_pipe]" << std::endl;
+	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
 	std::cout << op << std::endl;
 }
 
