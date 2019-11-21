@@ -186,8 +186,16 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 			conf.pipe_poll = pipe_poll_unavail_opt->value();
 		}
 
-	} catch (const popl::invalid_option& e) {
-		std::cerr << "Invalid option " << e.what() << std::endl;
+	}
+	catch (const popl::invalid_option& e)
+	{
+		std::cerr << "convey: " << e.what() << std::endl;
+		std::cerr << "Try 'convey --help' for more information." << std::endl;
+		return convey_setup_exit_err;
+	}
+	catch (const std::exception& e)
+	{
+		std::cerr << "convey: " << e.what() << std::endl;
 		return convey_setup_exit_err;
 	}
 
