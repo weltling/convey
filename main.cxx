@@ -313,6 +313,9 @@ int main(int argc, char** argv)
 {/*{{{*/
 
 	switch (convey_startup(argc, argv)) {
+		case convey_setup_ok:
+			// pass
+			break;
 		case convey_setup_exit_err:
 			return 1;
 		case convey_setup_exit_ok:
