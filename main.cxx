@@ -49,7 +49,7 @@ static bool is_console = false;
 static std::atomic<bool> is_error{false};
 
 #define BUF_SIZE 4096
-#define VERSION "0.0.1"
+#define VERSION "0.1.0"
 
 struct convey_conf {
 	bool verbose;
