@@ -140,10 +140,11 @@ static void convey_usage_print(popl::OptionParser& op)
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	popl::OptionParser op{};
-	auto help_opt = op.add<popl::Switch>("h", "help", "This help message.");
-	auto pipe_path_opt = op.add<popl::Value<std::string>>("n", "pipe", "Named pipe path.");
+	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
+	auto pipe_path_opt = op.add<popl::Value<std::string>>("", "pipe", "Path to the named pipe.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
+	auto version_opt = op.add<popl::Switch>("", "version", "Output version information and exit.");
 
 	try {
 		op.parse(argc, argv);
@@ -158,6 +159,11 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 		if (help_opt->count() >= 1) {
 			convey_usage_print(op);
+			return convey_setup_exit_ok;
+		}
+
+		if (version_opt->count() >= 1) {
+			std::cout << VERSION << std::endl;
 			return convey_setup_exit_ok;
 		}
 
