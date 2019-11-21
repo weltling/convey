@@ -45,7 +45,9 @@ static HANDLE pipe = INVALID_HANDLE_VALUE,
 		e0  = INVALID_HANDLE_VALUE,
 		e1  = INVALID_HANDLE_VALUE;
 static DWORD orig_ccp = 0, orig_cocp = 0;
-static bool is_console = false;
+static bool is_console = false,
+			in_is_pipe = false,
+			out_is_pipe = false;
 static std::atomic<bool> is_error{false};
 
 #define BUF_SIZE 4096
@@ -89,7 +91,17 @@ static void convey_error(DWORD c = -1)
 	}
 }/*}}}*/
 
-
+static void convey_in_out_pipe_error(DWORD er = -1)
+{
+	if (ERROR_BROKEN_PIPE == er) {
+		if (conf.verbose) {
+			convey_error(er);
+		}
+	}
+	else {
+		convey_error(er);
+	}
+}
 
 static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED& ov, DWORD& bytes, bool rc, DWORD er)
 {/*{{{*/
@@ -277,6 +289,9 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		convey_shutdown();
 		return convey_setup_exit_err;
 	}
+	in_is_pipe = GetFileType(in) == FILE_TYPE_PIPE;
+	//std::cout << "in_is_pipe=" << in_is_pipe << std::endl;
+
 	/* This could be something else, too. */
 	out = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (INVALID_HANDLE_VALUE == out) {
@@ -284,6 +299,8 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		convey_shutdown();
 		return convey_setup_exit_err;
 	}
+	out_is_pipe = GetFileType(out) == FILE_TYPE_PIPE;
+	//std::cout << "out_is_pipe=" << out_is_pipe << std::endl;
 
 	e0 = CreateEvent(nullptr, false, false, nullptr);
 	e1 = CreateEvent(nullptr, false, false, nullptr);
@@ -323,6 +340,7 @@ static void convey_shutdown(void)
 }/*}}}*/
 /* }}} */
 
+
 int main(int argc, char** argv)
 {/*{{{*/
 
@@ -343,10 +361,15 @@ int main(int argc, char** argv)
 			}
 
 			char buf[BUF_SIZE];
-			DWORD bytes = 0;
+			DWORD bytes = 0, er;
 
 			if (!ReadFile(in, buf, sizeof buf, &bytes, nullptr)) {
-				convey_error();
+				er = GetLastError();
+				if (in_is_pipe) {
+					convey_in_out_pipe_error(er);
+				} else {
+					convey_error(er);
+				}
 				is_error = true;
 				return;
 			}
@@ -361,7 +384,7 @@ int main(int argc, char** argv)
 				}
 
 				bool rc = WriteFile(pipe, buf, bytes, &bytes, &ov);
-				DWORD er = GetLastError();
+				er = GetLastError();
 				rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
 				if (!rc) {
 					is_error = true;
@@ -379,11 +402,12 @@ int main(int argc, char** argv)
 			}
 
 			char buf[BUF_SIZE];
-			DWORD bytes = 0;
-			OVERLAPPED ov = {0, 0, 0, 0, e1};
-			
+			DWORD bytes = 0, er;
+
+			OVERLAPPED ov = { 0, 0, 0, 0, e1 };
+
 			bool rc = ReadFile(pipe, buf, sizeof buf, &bytes, &ov);
-			DWORD er = GetLastError();
+			er = GetLastError();
 			rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
 			if (!rc) {
 				is_error = true;
@@ -391,7 +415,12 @@ int main(int argc, char** argv)
 			}
 
 			if (bytes && !WriteFile(out, buf, bytes, &bytes, nullptr)) {
-				convey_error();
+				er = GetLastError();
+				if (out_is_pipe) {
+					convey_in_out_pipe_error(er);
+				} else {
+					convey_error(er);
+				}
 				is_error = true;
 				return;
 			}
