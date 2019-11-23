@@ -98,37 +98,32 @@ static void convey_error(DWORD c = -1)
 	}
 }/*}}}*/
 
-static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED& ov, DWORD& bytes, bool rc, DWORD er)
+static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED* ov, DWORD* bytes, bool& rc, DWORD& er)
 {/*{{{*/
 	if (!rc) {
 		switch (er) {
 		case ERROR_HANDLE_EOF:
-			convey_error(er);
 			return false;
 			break;
 		case ERROR_IO_PENDING:
-			rc = GetOverlappedResult(h, &ov, &bytes, true);
+			rc = GetOverlappedResult(h, ov, bytes, true);
 			if (!rc) {
 				er = GetLastError();
 				switch (er) {
 				case ERROR_HANDLE_EOF:
-					convey_error(er);
 					return false;
 					break;
 				case ERROR_IO_INCOMPLETE:
 					// should not happen as we're waiting for the op to complete
-					convey_error(er);
 					return false;
 					break;
 				default:
-					convey_error(er);
 					return false;
 				}
 			}
 			//ResetEvent(ov.hEvent);
 			break;
 		default:
-			convey_error(er);
 			return false;
 		}
 	} else {
@@ -348,11 +343,32 @@ static void convey_shutdown(void)
 	}
 
 	convey_conf_shutdown();
-}/*}}}*/
+}
 #undef CLOSE_HANDLE
-/* }}} */
+/*}}}*/
 
 #define OV_E(e) { 0, 0, {{0, 0}}, e }
+static bool convey_read_pipe(HANDLE h, char (& buf)[BUF_SIZE], DWORD* bytes, HANDLE e, DWORD& er)
+{
+	OVERLAPPED ov = OV_E(e);
+	bool rc = ReadFile(h, buf, sizeof buf, bytes, &ov);
+	er = GetLastError();
+	rc = convey_get_ov_result(h, &ov, bytes, rc, er);
+
+	return rc;
+}
+
+static bool convey_write_pipe(HANDLE h, char(&buf)[BUF_SIZE], DWORD* bytes, HANDLE e, DWORD& er)
+{
+	OVERLAPPED ov = OV_E(e);
+	bool rc = WriteFile(h, buf, *bytes, bytes, &ov);
+	er = GetLastError();
+	rc = convey_get_ov_result(h, &ov, bytes, rc, er);
+
+	return rc;
+}
+#undef OV_E
+/* }}} */
 
 int main(int argc, char** argv)
 {/*{{{*/
@@ -374,38 +390,31 @@ int main(int argc, char** argv)
 			}
 
 			char buf[BUF_SIZE];
-			DWORD bytes{0}, er;
-			OVERLAPPED ov;
+			DWORD bytes{0}, er{0};
 			bool rc;
 
 			if (in_is_pipe) {
-				ov = OV_E(e_in);
-				rc = ReadFile(in, buf, sizeof buf, &bytes, &ov);
-				er = GetLastError();
-				rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
+				rc = convey_read_pipe(in, buf, &bytes, e_in, er);
 			} else {
 				rc = ReadFile(in, buf, sizeof buf, &bytes, nullptr);
+				er = GetLastError();
 			}
 			if (!rc) {
-				er = GetLastError();
 				convey_error(er);
 				is_error = true;
 				return;
 			}
 
 			if (bytes) {
-				ov = OV_E(e_pipe_w);
-
 				// Cut out CRLF.
 				// TODO parametrize this, if needed
 				if (bytes >= 2 && '\n' == buf[bytes - 1] && '\r' == buf[bytes - 2]) {
 					bytes -= 1;
 				}
 
-				rc = WriteFile(pipe, buf, bytes, &bytes, &ov);
-				er = GetLastError();
-				rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
+				rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
 				if (!rc) {
+					convey_error(er);
 					is_error = true;
 					return;
 				}
@@ -421,27 +430,22 @@ int main(int argc, char** argv)
 			}
 
 			char buf[BUF_SIZE];
-			DWORD bytes{0}, er;
-			OVERLAPPED ov;
+			DWORD bytes{0}, er{0};
 			bool rc;
 
-			ov = OV_E(e_pipe_r);
-			rc = ReadFile(pipe, buf, sizeof buf, &bytes, &ov);
-			er = GetLastError();
-			rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
+			rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
 			if (!rc) {
+				convey_error(er);
 				is_error = true;
 				return;
 			}
 
 			if (bytes) {
 				if (out_is_pipe) {
-					ov = OV_E(e_out);
-					rc = WriteFile(out, buf, bytes, &bytes, &ov);
-					er = GetLastError();
-					rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
+					rc = convey_write_pipe(pipe, buf, &bytes, e_out, er);
 				} else {
 					rc = WriteFile(out, buf, bytes, &bytes, nullptr);
+					er = GetLastError();
 				}
 				if (!rc) {
 					convey_error(er);
