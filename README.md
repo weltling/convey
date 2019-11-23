@@ -107,7 +107,7 @@ Add `nokaslr` to the kernel parameters.
 
 - Check VMWare and VirtualBox.
 - Check other things like Windows VM or any other possible counter part exposing named pipes.
-- Add console options for more flexibility.
+<strike>- Add console options for more flexibility.</strike>
 - Implement sending/receiving a file.
 - ...
 
