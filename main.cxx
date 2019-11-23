@@ -333,11 +333,20 @@ static void convey_shutdown(void)
 	if (INVALID_HANDLE_VALUE != out) {
 		CloseHandle(out);
 	}
+
 	if (INVALID_HANDLE_VALUE != e_pipe_w) {
 		CloseHandle(e_pipe_w);
 	}
 	if (INVALID_HANDLE_VALUE != e_pipe_r) {
 		CloseHandle(e_pipe_r);
+	}
+	if (INVALID_HANDLE_VALUE != e_in) {
+		CloseHandle(e_in);
+		e_in = INVALID_HANDLE_VALUE;
+	}
+	if (INVALID_HANDLE_VALUE != e_out) {
+		CloseHandle(e_out);
+		e_out = INVALID_HANDLE_VALUE;
 	}
 
 	if (is_console) {
