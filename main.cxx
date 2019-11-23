@@ -217,11 +217,13 @@ static bool convey_conf_shutdown()
 
 static void convey_shutdown(void);
 
+#if 0
 static BOOL WINAPI ctrl_handler(DWORD sig)
 {/*{{{*/
 	convey_shutdown();
 	return FALSE;
 }/*}}}*/
+#endif
 
 static bool is_console_handle(HANDLE h)
 {/*{{{*/
@@ -235,7 +237,9 @@ static void setup_console(void)
 	orig_cocp = GetConsoleOutputCP();
 	SetConsoleOutputCP(65001U);
 	SetConsoleCP(65001U);
+#if 0
 	SetConsoleCtrlHandler(ctrl_handler, TRUE);
+#endif
 
 #if 0
 	DWORD mode = 0;
