@@ -442,7 +442,7 @@ int main(int argc, char** argv)
 
 			if (bytes) {
 				if (out_is_pipe) {
-					rc = convey_write_pipe(pipe, buf, &bytes, e_out, er);
+					rc = convey_write_pipe(out, buf, &bytes, e_out, er);
 				} else {
 					rc = WriteFile(out, buf, bytes, &bytes, nullptr);
 					er = GetLastError();
