@@ -39,17 +39,17 @@
 /* }}} */
 
 /* {{{ Global decls */
-static HANDLE pipe = INVALID_HANDLE_VALUE,
-		in  = INVALID_HANDLE_VALUE,
-		out = INVALID_HANDLE_VALUE,
-		e_pipe_w  = INVALID_HANDLE_VALUE,
-		e_pipe_r  = INVALID_HANDLE_VALUE,
-		e_in = INVALID_HANDLE_VALUE,
-		e_out = INVALID_HANDLE_VALUE;
-static DWORD orig_ccp = 0, orig_cocp = 0;
-static bool is_console = false,
-			in_is_pipe = false,
-			out_is_pipe = false;
+static HANDLE pipe{INVALID_HANDLE_VALUE},
+			in{INVALID_HANDLE_VALUE},
+			out{INVALID_HANDLE_VALUE},
+			e_pipe_w{INVALID_HANDLE_VALUE},
+			e_pipe_r{INVALID_HANDLE_VALUE},
+			e_in{INVALID_HANDLE_VALUE},
+			e_out{INVALID_HANDLE_VALUE};
+static DWORD orig_ccp{0}, orig_cocp{0};
+static bool is_console{false},
+			in_is_pipe{false},
+			out_is_pipe{false};
 static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 
@@ -66,7 +66,7 @@ struct convey_conf {
 	.pipe_path = std::string(""),
 	.pall = 0
 };*/
-static convey_conf conf = {0};
+static convey_conf conf{0};
 
 enum convey_setup_status {
 	convey_setup_ok,
@@ -79,7 +79,7 @@ enum convey_setup_status {
 /* {{{ Helper routines */
 static void convey_error(DWORD c = -1)
 {/*{{{*/
-	char *buf = NULL;
+	char *buf{nullptr};
 	DWORD err_code = (-1 == c) ? GetLastError() : c;
 
 	if (ERROR_BROKEN_PIPE == c && !conf.verbose) {
@@ -256,7 +256,7 @@ static void restore_console(void)
 
 static convey_setup_status convey_startup(int argc, char **argv)
 {/*{{{*/
-	DWORD rc = -1;
+	DWORD rc;
 
 	convey_setup_status _rc = convey_conf_setup(argc, argv);
 	if(convey_setup_ok != _rc) {
@@ -370,7 +370,7 @@ int main(int argc, char** argv)
 			}
 
 			char buf[BUF_SIZE];
-			DWORD bytes = 0, er;
+			DWORD bytes{0}, er;
 			OVERLAPPED ov;
 			bool rc;
 
@@ -417,7 +417,7 @@ int main(int argc, char** argv)
 			}
 
 			char buf[BUF_SIZE];
-			DWORD bytes = 0, er;
+			DWORD bytes{0}, er;
 			OVERLAPPED ov;
 			bool rc;
 
