@@ -237,6 +237,7 @@ static void setup_console(void)
 	SetConsoleCP(65001U);
 	SetConsoleCtrlHandler(ctrl_handler, TRUE);
 
+#if 0
 	DWORD mode = 0;
 	if (GetConsoleMode(in, &mode)) {
 		mode = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
@@ -244,6 +245,7 @@ static void setup_console(void)
 			convey_error();
 		}
 	}
+#endif
 }/*}}}*/
 
 static void restore_console(void)

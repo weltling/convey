@@ -89,6 +89,10 @@ Alternatively, unpack kernel sources under /usr/src/kernel or where ever else th
 
 Forgot to bring kernel into the debugging mode?
 
+## Not all frames are resolved
+
+Add `nokaslr` to the kernel parameters.
+
 
 # Links
 
