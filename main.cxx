@@ -348,6 +348,7 @@ static void convey_shutdown(void)
 }/*}}}*/
 /* }}} */
 
+#define OV_E(e) { 0, 0, {{0, 0}}, e }
 
 int main(int argc, char** argv)
 {/*{{{*/
@@ -374,7 +375,7 @@ int main(int argc, char** argv)
 			bool rc;
 
 			if (in_is_pipe) {
-				ov = { 0, 0, 0, 0, e_in };
+				ov = OV_E(e_in);
 				rc = ReadFile(in, buf, sizeof buf, &bytes, &ov);
 				er = GetLastError();
 				rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
@@ -389,7 +390,7 @@ int main(int argc, char** argv)
 			}
 
 			if (bytes) {
-				ov = {0, 0, 0, 0, e_pipe_w};
+				ov = OV_E(e_pipe_w);
 
 				// Cut out CRLF.
 				// TODO parametrize this, if needed
@@ -420,7 +421,7 @@ int main(int argc, char** argv)
 			OVERLAPPED ov;
 			bool rc;
 
-			ov = { 0, 0, 0, 0, e_pipe_r };
+			ov = OV_E(e_pipe_r);
 			rc = ReadFile(pipe, buf, sizeof buf, &bytes, &ov);
 			er = GetLastError();
 			rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
@@ -431,7 +432,7 @@ int main(int argc, char** argv)
 
 			if (bytes) {
 				if (out_is_pipe) {
-					ov = { 0, 0, 0, 0, e_out };
+					ov = OV_E(e_out);
 					rc = WriteFile(out, buf, bytes, &bytes, &ov);
 					er = GetLastError();
 					rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
