@@ -322,32 +322,22 @@ static convey_setup_status convey_startup(int argc, char **argv)
 	return convey_setup_ok;
 }/*}}}*/
 
+
+#define CLOSE_HANDLE(h) do { \
+	if (INVALID_HANDLE_VALUE != h) { \
+		CloseHandle(h); \
+		h = INVALID_HANDLE_VALUE; \
+	} \
+} while (0)
 static void convey_shutdown(void)
 {/*{{{*/
-	if (INVALID_HANDLE_VALUE != pipe) {
-		CloseHandle(pipe);
-	}
-	if (INVALID_HANDLE_VALUE != in) {
-		CloseHandle(in);
-	}
-	if (INVALID_HANDLE_VALUE != out) {
-		CloseHandle(out);
-	}
-
-	if (INVALID_HANDLE_VALUE != e_pipe_w) {
-		CloseHandle(e_pipe_w);
-	}
-	if (INVALID_HANDLE_VALUE != e_pipe_r) {
-		CloseHandle(e_pipe_r);
-	}
-	if (INVALID_HANDLE_VALUE != e_in) {
-		CloseHandle(e_in);
-		e_in = INVALID_HANDLE_VALUE;
-	}
-	if (INVALID_HANDLE_VALUE != e_out) {
-		CloseHandle(e_out);
-		e_out = INVALID_HANDLE_VALUE;
-	}
+	CLOSE_HANDLE(pipe);
+	CLOSE_HANDLE(in);
+	CLOSE_HANDLE(out);
+	CLOSE_HANDLE(e_pipe_w);
+	CLOSE_HANDLE(e_pipe_r);
+	CLOSE_HANDLE(e_in);
+	CLOSE_HANDLE(e_out);
 
 	if (is_console) {
 		restore_console();
@@ -355,6 +345,7 @@ static void convey_shutdown(void)
 
 	convey_conf_shutdown();
 }/*}}}*/
+#undef CLOSE_HANDLE
 /* }}} */
 
 #define OV_E(e) { 0, 0, {{0, 0}}, e }
