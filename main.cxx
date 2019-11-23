@@ -42,13 +42,16 @@
 static HANDLE pipe = INVALID_HANDLE_VALUE,
 		in  = INVALID_HANDLE_VALUE,
 		out = INVALID_HANDLE_VALUE,
-		e0  = INVALID_HANDLE_VALUE,
-		e1  = INVALID_HANDLE_VALUE;
+		e_pipe_w  = INVALID_HANDLE_VALUE,
+		e_pipe_r  = INVALID_HANDLE_VALUE,
+		e_in = INVALID_HANDLE_VALUE,
+		e_out = INVALID_HANDLE_VALUE;
 static DWORD orig_ccp = 0, orig_cocp = 0;
 static bool is_console = false,
 			in_is_pipe = false,
 			out_is_pipe = false;
 static std::atomic<bool> is_error{false};
+static std::atomic<bool> shutting_down{false};
 
 #define BUF_SIZE 4096
 #define VERSION "0.1.0"
@@ -58,18 +61,18 @@ struct convey_conf {
 	std::string pipe_path;
 	double pipe_poll;
 };
-
-enum convey_setup_status {
-	convey_setup_ok,
-	convey_setup_exit_ok,
-	convey_setup_exit_err
-};
 /*static convey_conf conf = {
 	.verbose = false,
 	.pipe_path = std::string(""),
 	.pall = 0
 };*/
 static convey_conf conf = {0};
+
+enum convey_setup_status {
+	convey_setup_ok,
+	convey_setup_exit_ok,
+	convey_setup_exit_err
+};
 
 /* }}} */
 
@@ -78,6 +81,10 @@ static void convey_error(DWORD c = -1)
 {/*{{{*/
 	char *buf = NULL;
 	DWORD err_code = (-1 == c) ? GetLastError() : c;
+
+	if (ERROR_BROKEN_PIPE == c && !conf.verbose) {
+		return;
+	}
 
 	DWORD ret = FormatMessage(
 		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
@@ -90,18 +97,6 @@ static void convey_error(DWORD c = -1)
 		LocalFree(buf);
 	}
 }/*}}}*/
-
-static void convey_in_out_pipe_error(DWORD er = -1)
-{
-	if (ERROR_BROKEN_PIPE == er) {
-		if (conf.verbose) {
-			convey_error(er);
-		}
-	}
-	else {
-		convey_error(er);
-	}
-}
 
 static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED& ov, DWORD& bytes, bool rc, DWORD er)
 {/*{{{*/
@@ -144,10 +139,10 @@ static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED& ov, DWORD& bytes, bool r
 }/*}}}*/
 
 static void convey_usage_print(popl::OptionParser& op)
-{
+{/*{{{*/
 	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
 	std::cout << op << std::endl;
-}
+}/*}}}*/
 
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
@@ -216,6 +211,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 static bool convey_conf_shutdown()
 {/*{{{*/
+	shutting_down = true;
 	return true;
 }/*}}}*/
 
@@ -240,6 +236,14 @@ static void setup_console(void)
 	SetConsoleOutputCP(65001U);
 	SetConsoleCP(65001U);
 	SetConsoleCtrlHandler(ctrl_handler, TRUE);
+
+	DWORD mode = 0;
+	if (GetConsoleMode(in, &mode)) {
+		mode = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+		if (!SetConsoleMode(in, mode)) {
+			convey_error();
+		}
+	}
 }/*}}}*/
 
 static void restore_console(void)
@@ -302,8 +306,10 @@ static convey_setup_status convey_startup(int argc, char **argv)
 	out_is_pipe = GetFileType(out) == FILE_TYPE_PIPE;
 	//std::cout << "out_is_pipe=" << out_is_pipe << std::endl;
 
-	e0 = CreateEvent(nullptr, false, false, nullptr);
-	e1 = CreateEvent(nullptr, false, false, nullptr);
+	e_pipe_w = CreateEvent(nullptr, false, false, nullptr);
+	e_pipe_r = CreateEvent(nullptr, false, false, nullptr);
+	e_in = CreateEvent(nullptr, false, false, nullptr);
+	e_out = CreateEvent(nullptr, false, false, nullptr);
 
 	is_console = is_console_handle(in) && is_console_handle(out);
 
@@ -325,11 +331,11 @@ static void convey_shutdown(void)
 	if (INVALID_HANDLE_VALUE != out) {
 		CloseHandle(out);
 	}
-	if (INVALID_HANDLE_VALUE != e0) {
-		CloseHandle(e0);
+	if (INVALID_HANDLE_VALUE != e_pipe_w) {
+		CloseHandle(e_pipe_w);
 	}
-	if (INVALID_HANDLE_VALUE != e1) {
-		CloseHandle(e1);
+	if (INVALID_HANDLE_VALUE != e_pipe_r) {
+		CloseHandle(e_pipe_r);
 	}
 
 	if (is_console) {
@@ -356,26 +362,32 @@ int main(int argc, char** argv)
 
 	std::thread t0([]() {
 		while (true) {
-			if (is_error) {
+			if (is_error || shutting_down) {
 				return;
 			}
 
 			char buf[BUF_SIZE];
 			DWORD bytes = 0, er;
+			OVERLAPPED ov;
+			bool rc;
 
-			if (!ReadFile(in, buf, sizeof buf, &bytes, nullptr)) {
+			if (in_is_pipe) {
+				ov = { 0, 0, 0, 0, e_in };
+				rc = ReadFile(in, buf, sizeof buf, &bytes, &ov);
 				er = GetLastError();
-				if (in_is_pipe) {
-					convey_in_out_pipe_error(er);
-				} else {
-					convey_error(er);
-				}
+				rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
+			} else {
+				rc = ReadFile(in, buf, sizeof buf, &bytes, nullptr);
+			}
+			if (!rc) {
+				er = GetLastError();
+				convey_error(er);
 				is_error = true;
 				return;
 			}
 
 			if (bytes) {
-				OVERLAPPED ov = {0, 0, 0, 0, e0};
+				ov = {0, 0, 0, 0, e_pipe_w};
 
 				// Cut out CRLF.
 				// TODO parametrize this, if needed
@@ -383,7 +395,7 @@ int main(int argc, char** argv)
 					bytes -= 1;
 				}
 
-				bool rc = WriteFile(pipe, buf, bytes, &bytes, &ov);
+				rc = WriteFile(pipe, buf, bytes, &bytes, &ov);
 				er = GetLastError();
 				rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
 				if (!rc) {
@@ -397,16 +409,17 @@ int main(int argc, char** argv)
 
 	std::thread t1([]() {
 		while (true) {
-			if (is_error) {
+			if (is_error || shutting_down) {
 				return;
 			}
 
 			char buf[BUF_SIZE];
 			DWORD bytes = 0, er;
+			OVERLAPPED ov;
+			bool rc;
 
-			OVERLAPPED ov = { 0, 0, 0, 0, e1 };
-
-			bool rc = ReadFile(pipe, buf, sizeof buf, &bytes, &ov);
+			ov = { 0, 0, 0, 0, e_pipe_r };
+			rc = ReadFile(pipe, buf, sizeof buf, &bytes, &ov);
 			er = GetLastError();
 			rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
 			if (!rc) {
@@ -414,15 +427,20 @@ int main(int argc, char** argv)
 				return;
 			}
 
-			if (bytes && !WriteFile(out, buf, bytes, &bytes, nullptr)) {
-				er = GetLastError();
+			if (bytes) {
 				if (out_is_pipe) {
-					convey_in_out_pipe_error(er);
+					ov = { 0, 0, 0, 0, e_out };
+					rc = WriteFile(out, buf, bytes, &bytes, &ov);
+					er = GetLastError();
+					rc = convey_get_ov_result(pipe, ov, bytes, rc, er);
 				} else {
-					convey_error(er);
+					rc = WriteFile(out, buf, bytes, &bytes, nullptr);
 				}
-				is_error = true;
-				return;
+				if (!rc) {
+					convey_error(er);
+					is_error = true;
+					return;
+				}
 			}
 		}
 	});
