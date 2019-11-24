@@ -79,6 +79,12 @@ Here you are. This doesn't need an elevated console.
 
 `stty -F /dev/ttyS0 -echo`
 
+## The serial screen size is too small
+
+Use stty to set the desired columns and rows number, for example
+
+`stty columns 200 rows 60`
+
 ## Pointing gdb to the sources
 
 `(gdb) set substitute-path /sources/were/compiled/here /put/sources/here`
