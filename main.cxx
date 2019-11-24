@@ -63,11 +63,13 @@ static std::atomic<bool> shutting_down{false};
 
 struct convey_conf {
 	bool verbose;
+	bool no_xterm;
 	std::string pipe_path;
 	double pipe_poll;
 };
 /*static convey_conf conf = {
 	.verbose = false,
+	.no_xterm = false,
 	.pipe_path = std::string(""),
 	.pall = 0
 };*/
@@ -150,6 +152,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
 	auto pipe_path_opt = op.add<popl::Value<std::string>>("", "pipe", "Path to the named pipe.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.");
+	auto no_xterm_opt = op.add<popl::Switch>("", "no-xterm", "Disable xterm support.");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
 	auto version_opt = op.add<popl::Switch>("", "version", "Output version information and exit.");
 
@@ -193,6 +196,9 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 			conf.pipe_poll = pipe_poll_unavail_opt->value();
 		}
 
+		if (no_xterm_opt->count() >= 1) {
+			conf.no_xterm = true;
+		}
 	}
 	catch (const popl::invalid_option& e)
 	{
@@ -221,8 +227,10 @@ static void restore_console(void)
 {/*{{{*/
 	SetConsoleOutputCP(orig_cocp);
 	SetConsoleCP(orig_ccp);
-	SetConsoleMode(in, orig_in_cmode);
-	SetConsoleMode(out, orig_out_cmode);
+	if (!conf.no_xterm) {
+		SetConsoleMode(in, orig_in_cmode);
+		SetConsoleMode(out, orig_out_cmode);
+	}
 }/*}}}*/
 
 static BOOL WINAPI ctrl_handler(DWORD sig)
@@ -245,29 +253,31 @@ static void setup_console(void)
 	SetConsoleCP(65001U);
 	SetConsoleCtrlHandler(ctrl_handler, TRUE);
 
-	DWORD mode;
+	if (!conf.no_xterm) {
+		DWORD mode;
 
-	mode = ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_INSERT_MODE | ENABLE_PROCESSED_INPUT) | ENABLE_WINDOW_INPUT;
-	if (GetConsoleMode(in, &orig_in_cmode)) {
-		mode &= orig_in_cmode | ENABLE_VIRTUAL_TERMINAL_INPUT;
-		if (!SetConsoleMode(in, mode)) {
-		mode |= ~ENABLE_VIRTUAL_TERMINAL_INPUT;
+		mode = ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_INSERT_MODE | ENABLE_PROCESSED_INPUT) | ENABLE_WINDOW_INPUT;
+		if (GetConsoleMode(in, &orig_in_cmode)) {
+			mode &= orig_in_cmode | ENABLE_VIRTUAL_TERMINAL_INPUT;
 			if (!SetConsoleMode(in, mode)) {
-				if (conf.verbose) {
-					convey_error();
+			mode |= ~ENABLE_VIRTUAL_TERMINAL_INPUT;
+				if (!SetConsoleMode(in, mode)) {
+					if (conf.verbose) {
+						convey_error();
+					}
 				}
 			}
 		}
-	}
 
-	mode = ENABLE_PROCESSED_OUTPUT;
-	if (GetConsoleMode(out, &orig_out_cmode)) {
-		mode |= orig_out_cmode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN;
-		if (!SetConsoleMode(out, mode)) {
-			mode |= ~DISABLE_NEWLINE_AUTO_RETURN;
+		mode = ENABLE_PROCESSED_OUTPUT;
+		if (GetConsoleMode(out, &orig_out_cmode)) {
+			mode |= orig_out_cmode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN;
 			if (!SetConsoleMode(out, mode)) {
-				if (conf.verbose) {
-					convey_error();
+				mode |= ~DISABLE_NEWLINE_AUTO_RETURN;
+				if (!SetConsoleMode(out, mode)) {
+					if (conf.verbose) {
+						convey_error();
+					}
 				}
 			}
 		}
