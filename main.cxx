@@ -441,10 +441,12 @@ int main(int argc, char** argv)
 			}
 
 			if (bytes) {
-				// Cut out CRLF.
-				// TODO parametrize this, if needed
-				if (bytes >= 2 && '\n' == buf[bytes - 1] && '\r' == buf[bytes - 2]) {
-					bytes -= 1;
+				if (conf.no_xterm) {
+					// Cut out CRLF.
+					// TODO parametrize this, if needed
+					if (bytes >= 2 && '\n' == buf[bytes - 1] && '\r' == buf[bytes - 2]) {
+						bytes -= 1;
+					}
 				}
 
 				rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
