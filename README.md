@@ -38,8 +38,15 @@ Configure autologin for `ttyS0` or another terminal device you've chosen.
 
 # Connecting to a VM
 
+## Method 1
+
 - Start the VM.
 - Start an elevated cmd window and invoke `convey.exe \\.\pipe\<pipe name>`.
+
+## Method 2
+
+- Before starting the VM, invoke convey with the `--poll` argument.
+- Start the VM.
 
 # Debugging Linux kernel
 
@@ -83,7 +90,7 @@ Here you are. This doesn't need an elevated console.
 
 Use stty to set the desired columns and rows number, for example
 
-`stty columns 200 rows 60`
+`stty columns 235 rows 62`
 
 ## Pointing gdb to the sources
 
