@@ -30,6 +30,8 @@
 /* {{{ Includes */
 #include <windows.h>
 #include <conio.h>
+#include <fcntl.h>
+#include <io.h>
 
 #include <iostream>
 #include <thread>
@@ -46,7 +48,10 @@ static HANDLE pipe{INVALID_HANDLE_VALUE},
 			e_pipe_r{INVALID_HANDLE_VALUE},
 			e_in{INVALID_HANDLE_VALUE},
 			e_out{INVALID_HANDLE_VALUE};
-static DWORD orig_ccp{0}, orig_cocp{0};
+static DWORD orig_ccp{0},
+			 orig_cocp{0},
+			 orig_in_cmode{0},
+			 orig_out_cmode{0};
 static bool is_console{false},
 			in_is_pipe{false},
 			out_is_pipe{false};
@@ -212,13 +217,19 @@ static bool convey_conf_shutdown()
 
 static void convey_shutdown(void);
 
-#if 0
+static void restore_console(void)
+{/*{{{*/
+	SetConsoleOutputCP(orig_cocp);
+	SetConsoleCP(orig_ccp);
+	SetConsoleMode(in, orig_in_cmode);
+	SetConsoleMode(out, orig_out_cmode);
+}/*}}}*/
+
 static BOOL WINAPI ctrl_handler(DWORD sig)
 {/*{{{*/
-	convey_shutdown();
+	restore_console();
 	return FALSE;
 }/*}}}*/
-#endif
 
 static bool is_console_handle(HANDLE h)
 {/*{{{*/
@@ -232,30 +243,44 @@ static void setup_console(void)
 	orig_cocp = GetConsoleOutputCP();
 	SetConsoleOutputCP(65001U);
 	SetConsoleCP(65001U);
-#if 0
 	SetConsoleCtrlHandler(ctrl_handler, TRUE);
-#endif
 
-#if 0
-	DWORD mode = 0;
-	if (GetConsoleMode(in, &mode)) {
-		mode = ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+	DWORD mode;
+
+	mode = ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_INSERT_MODE | ENABLE_PROCESSED_INPUT) | ENABLE_WINDOW_INPUT;
+	if (GetConsoleMode(in, &orig_in_cmode)) {
+		mode &= orig_in_cmode | ENABLE_VIRTUAL_TERMINAL_INPUT;
 		if (!SetConsoleMode(in, mode)) {
-			convey_error();
+		mode |= ~ENABLE_VIRTUAL_TERMINAL_INPUT;
+			if (!SetConsoleMode(in, mode)) {
+				if (conf.verbose) {
+					convey_error();
+				}
+			}
 		}
 	}
-#endif
-}/*}}}*/
 
-static void restore_console(void)
-{/*{{{*/
-	SetConsoleOutputCP(orig_cocp);
-	SetConsoleCP(orig_ccp);
+	mode = ENABLE_PROCESSED_OUTPUT;
+	if (GetConsoleMode(out, &orig_out_cmode)) {
+		mode |= orig_out_cmode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN;
+		if (!SetConsoleMode(out, mode)) {
+			mode |= ~DISABLE_NEWLINE_AUTO_RETURN;
+			if (!SetConsoleMode(out, mode)) {
+				if (conf.verbose) {
+					convey_error();
+				}
+			}
+		}
+	}
 }/*}}}*/
 
 static convey_setup_status convey_startup(int argc, char **argv)
 {/*{{{*/
 	DWORD rc;
+
+	_setmode(_fileno(stdin), _O_BINARY);
+	_setmode(_fileno(stdout), _O_BINARY);
+	_setmode(_fileno(stderr), _O_BINARY);
 
 	convey_setup_status _rc = convey_conf_setup(argc, argv);
 	if(convey_setup_ok != _rc) {
@@ -330,6 +355,10 @@ static convey_setup_status convey_startup(int argc, char **argv)
 } while (0)
 static void convey_shutdown(void)
 {/*{{{*/
+	if (is_console) {
+		restore_console();
+	}
+
 	CLOSE_HANDLE(pipe);
 	CLOSE_HANDLE(in);
 	CLOSE_HANDLE(out);
@@ -337,10 +366,6 @@ static void convey_shutdown(void)
 	CLOSE_HANDLE(e_pipe_r);
 	CLOSE_HANDLE(e_in);
 	CLOSE_HANDLE(e_out);
-
-	if (is_console) {
-		restore_console();
-	}
 
 	convey_conf_shutdown();
 }
