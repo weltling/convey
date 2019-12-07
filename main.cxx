@@ -59,13 +59,14 @@ static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 
 #define BUF_SIZE 4096
-#define VERSION "0.1.0"
+#define VERSION "0.2.0-dev"
 
 struct convey_conf {
 	bool verbose;
 	bool no_xterm;
 	std::string pipe_path;
 	double pipe_poll;
+	uint32_t baud;
 };
 /*static convey_conf conf = {
 	.verbose = false,
@@ -140,18 +141,56 @@ static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED* ov, DWORD* bytes, bool& 
 	return true;
 }/*}}}*/
 
+static decltype(auto) convey_get_baud(std::shared_ptr<popl::Value<uint32_t>>& opt)
+{
+	uint32_t b;
+	
+	if (opt->is_set()) {
+		b = opt->value();
+		switch (b) {
+			default:
+				std::cerr << "convey: unsupported baud rate '" << b << "'" << std::endl;
+				return ((decltype(b))-1);
+			case CBR_110:
+			case CBR_300:
+			case CBR_600:
+			case CBR_1200:
+			case CBR_2400:
+			case CBR_4800:
+			case CBR_9600:
+			case CBR_14400:
+			case CBR_19200:
+			case CBR_38400:
+			case CBR_57600:
+			case CBR_115200:
+			case CBR_128000:
+			case CBR_256000:
+				break;
+		}
+	} else {
+		b = opt->get_default();
+	}
+
+	return b;
+}
+
 static void convey_usage_print(popl::OptionParser& op)
 {/*{{{*/
 	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
+	std::cerr << "       convey [options] \\\\.\\COM<num>" << std::endl;
+	std::cerr << std::endl;
+	std::cerr << "Communicate with a device through a virtual or hardware COM port." << std::endl;
+	std::cerr << std::endl;
 	std::cout << op << std::endl;
 }/*}}}*/
 
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	popl::OptionParser op{};
+	auto baud_opt = op.add<popl::Value<uint32_t>>("b", "baud", "Baud rate in bps, only relevant for serial communication.", CBR_115200);
 	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
-	auto pipe_path_opt = op.add<popl::Value<std::string>>("", "pipe", "Path to the named pipe.");
-	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.");
+	auto pipe_path_opt = op.add<popl::Value<std::string>>("", "dev", "Path to the named pipe or COM device.");
+	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
 	auto no_xterm_opt = op.add<popl::Switch>("", "no-xterm", "Disable xterm support.");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
 	auto version_opt = op.add<popl::Switch>("", "version", "Output version information and exit.");
@@ -198,6 +237,11 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 		if (no_xterm_opt->count() >= 1) {
 			conf.no_xterm = true;
+		}
+
+		conf.baud = convey_get_baud(baud_opt);
+		if (((decltype(conf.baud))-1) == conf.baud) {
+			return convey_setup_exit_err;
 		}
 	}
 	catch (const popl::invalid_option& e)
@@ -334,7 +378,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		}
 
 		/* TODO Parametrize this. */
-		dcb.BaudRate = 115200;
+		dcb.BaudRate = conf.baud;
 		dcb.ByteSize = 8;
 		dcb.Parity = 0;
 		dcb.StopBits = ONESTOPBIT;
