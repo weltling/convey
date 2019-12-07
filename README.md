@@ -50,7 +50,7 @@ Configure autologin for `ttyS0` or another terminal device you've chosen.
 
 # Connecting to a COM port
 
-- Invoke `convey.exe \\.\COM<num>`
+- Invoke `convey.exe \.\COM<num>`
 
 
 # Debugging Linux kernel
