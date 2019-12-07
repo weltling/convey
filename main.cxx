@@ -322,6 +322,29 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		std::cout << "Connection established in " << (elapsed/1000) << " seconds" << std::endl;
 	}
 
+	/* TODO Expand on this handling. */
+	DWORD t = GetFileType(pipe);
+	if (FILE_TYPE_CHAR == t) {
+		DCB dcb = {0};
+		dcb.DCBlength = sizeof(DCB);
+
+		if (!::GetCommState(pipe, &dcb)) {
+			convey_error();
+			return convey_setup_exit_err;
+		}
+
+		/* TODO Parametrize this. */
+		dcb.BaudRate = 115200;
+/*		dcb.ByteSize = 8;
+		dcb.Parity = 0;
+		dcb.StopBits = ONESTOPBIT;*/
+
+		if (!::SetCommState(pipe, &dcb)) {
+			convey_error();
+			return convey_setup_exit_err;
+		}
+	}
+
 	/* This could be something else, too. */
 	in = GetStdHandle(STD_INPUT_HANDLE);
 	if (INVALID_HANDLE_VALUE == in) {
