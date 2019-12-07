@@ -48,6 +48,11 @@ Configure autologin for `ttyS0` or another terminal device you've chosen.
 - Before starting the VM, invoke convey with the `--poll` argument.
 - Start the VM.
 
+# Connecting to a COM port
+
+- Invoke `convey.exe \\.\COM<num>`
+
+
 # Debugging Linux kernel
 
 ## Prerequisities
