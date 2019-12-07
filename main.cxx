@@ -380,10 +380,21 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		/* TODO Parametrize this. */
 		dcb.BaudRate = conf.baud;
 		dcb.ByteSize = 8;
-		dcb.Parity = 0;
+		dcb.Parity = NOPARITY;
 		dcb.StopBits = ONESTOPBIT;
 
 		if (!::SetCommState(pipe, &dcb)) {
+			convey_error();
+			return convey_setup_exit_err;
+		}
+
+		COMMTIMEOUTS timeouts;
+		timeouts.ReadIntervalTimeout = MAXDWORD;
+		timeouts.ReadTotalTimeoutMultiplier = 0;
+		timeouts.ReadTotalTimeoutConstant = 0;
+		timeouts.WriteTotalTimeoutMultiplier = 0;
+		timeouts.WriteTotalTimeoutConstant = 0;
+		if (!SetCommTimeouts(pipe, &timeouts)) {
 			convey_error();
 			return convey_setup_exit_err;
 		}
