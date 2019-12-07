@@ -1,6 +1,7 @@
 # The convey tool
 
-Hypervisors like Hyper-V provide a functionality to emulate a serial port in the VM, while exposing it as a named pipe to the host Windows machine. Using convey, it is possible to connect to a virtual machine's virtual serial port from the host system using the exposed named pipe. This project specifically aims Linux VMs running on Windows.
+Convey is a serial port communication tool.
+
 
 # Building
 
@@ -15,9 +16,23 @@ Hypervisors like Hyper-V provide a functionality to emulate a serial port in the
 - nmake /nologo CXX="c:\Program Files\LLVM\bin\clang-cl.exe" LD="c:\Program Files\LLVM\bin\lld-link.exe"
 
 
-# Preparing for Hyper-V
+# Usage with a physical COM port
 
-## On host, conifgure a com port
+The physical COM port usage is a simple as invoking the tool with the COM port name.
+
+- Invoke `convey.exe COM<num>`
+- For the port with number >= 10, use `\.\COM<num>`
+
+There's no difference whether it's a native COM port or a USB-to-COM convertor. As long as the COM port appears under the device manager, it is usable.
+
+
+# Usage with Hyper-V
+
+Hypervisors like Hyper-V provide a functionality to emulate a serial port in the VM, while exposing it as a named pipe to the host Windows machine. Using convey, it is possible to connect to a virtual machine's virtual serial port from the host system using the exposed named pipe.
+
+## Preparing Hyper-V
+
+### On host, conifgure a com port
 
 Assign a named pipe that will be passed as a COM1 into a VM.
 
@@ -27,30 +42,26 @@ View configured COM ports on a VM.
 
 `Get-VMComPort -VMName <vm name>`
 
-## Inside the VM
+### Inside the VM
 
 Add `console=ttyS0,115200 console=tty0` to the kernel parameters.
 
-## Optional
+### Optional
 
 Configure autologin for `ttyS0` or another terminal device you've chosen.
 
 
-# Connecting to a VM
+## Connecting to a VM
 
-## Method 1
+### Method 1
 
 - Start the VM.
 - Start an elevated cmd window and invoke `convey.exe \\.\pipe\<pipe name>`.
 
-## Method 2
+### Method 2
 
 - Before starting the VM, invoke convey with the `--poll` argument.
 - Start the VM.
-
-# Connecting to a COM port
-
-- Invoke `convey.exe \.\COM<num>`
 
 
 # Debugging Linux kernel
