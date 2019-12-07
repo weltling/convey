@@ -335,9 +335,9 @@ static convey_setup_status convey_startup(int argc, char **argv)
 
 		/* TODO Parametrize this. */
 		dcb.BaudRate = 115200;
-/*		dcb.ByteSize = 8;
+		dcb.ByteSize = 8;
 		dcb.Parity = 0;
-		dcb.StopBits = ONESTOPBIT;*/
+		dcb.StopBits = ONESTOPBIT;
 
 		if (!::SetCommState(pipe, &dcb)) {
 			convey_error();
