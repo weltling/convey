@@ -37,7 +37,7 @@ deploy:
           description: ''
           auth_token:
                   secure: 3G2RxLQc+/+CDj6kNfeYG3tfVvSD4tAETGeP4MqxaFRipmyt7TsCjERm2LlkqIff
-          artifact: /projects/convey/.*\.zip
+          artifact: /.*\.zip/
           draft: false
           prerelease: false
           force_update: true
