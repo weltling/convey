@@ -1,5 +1,5 @@
 
-VERSION=0.3.0-dev
+VERSION=0.2.1
 
 !if "$(CXX)" == ""
 CXX=cl.exe
