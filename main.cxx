@@ -180,7 +180,7 @@ static void convey_usage_print(popl::OptionParser& op)
 	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
 	std::cerr << "       convey [options] \\\\.\\COM<num>" << std::endl;
 	std::cerr << std::endl;
-	std::cerr << "Communicate with a device through a virtual or hardware COM port." << std::endl;
+	std::cerr << "IPC through a named pipe or a serial port." << std::endl;
 	std::cerr << std::endl;
 	std::cout << op << std::endl;
 }/*}}}*/
