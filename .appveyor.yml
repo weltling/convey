@@ -25,3 +25,11 @@ after_build:
                 7z a $ZIPBALL $d\convey.exe $d\convey.pdb $d\LICENSE $d\README.md
                 Push-AppveyorArtifact $ZIPBALL
 
+deploy:
+        - provider: GitHub
+        - artifact: c:\projects\convey\*.zip
+        - draft: false
+        - prerelease: false
+          on:
+                  APPVEYOR_REPO_TAG: true
+
