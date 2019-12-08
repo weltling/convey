@@ -5,8 +5,6 @@ image: Visual Studio 2019
 
 clone_folder: c:\projects\convey
 
-skip_tags: true
-
 environment:
         matrix:
                 - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
@@ -34,7 +32,7 @@ after_build:
 
 deploy:
         - provider: GitHub
-          release: convey-$(APPVEYOR_REPO_TAG_NAME)
+          release: $(APPVEYOR_REPO_TAG_NAME)
           #description: Convey serial port communication tool.
           description: ''
           auth_token:
@@ -42,6 +40,7 @@ deploy:
           artifact: /projects/convey/.*\.zip
           draft: false
           prerelease: false
+          force_update: true
           on:
                   APPVEYOR_REPO_TAG: true
 
