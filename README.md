@@ -1,6 +1,8 @@
 # The convey tool
 
-[Convey](https://github.com/weltling/convey) is a serial port communication tool. It is distributed under the BSD 2-clause license.
+[Convey](https://github.com/weltling/convey) is an inter-process communication tool with capabilities to communicate through a named pipe or a serial port. Notable features include the communication with Hyper-V based virtual machines through an emulated COM port based on named pipes.
+
+Convey is distributed under the BSD 2-clause license.
 
 [![Build status](https://ci.appveyor.com/api/projects/status/j2ojba2w9ha3nyrr?svg=true)](https://ci.appveyor.com/project/weltling/convey)
 
