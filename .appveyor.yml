@@ -22,8 +22,8 @@ after_build:
                 $d='c:\projects\convey'
                 $s=[IO.File]::ReadAllText("$d\config.h")
                 $s -match 'VERSION\s*""([^^"]+)""'
-                $version = $Matches.1
-                $ZIPBALL="$d\convey-" + $version + "-" + $env:ARCH + ".zip"
+                $convey_version = $Matches.1
+                $ZIPBALL="$d\convey-" + $convey_version + "-" + $env:ARCH + ".zip"
                 7z a $ZIPBALL $d\convey.exe $d\convey.pdb $d\LICENSE $d\README.md
                 Push-AppveyorArtifact $ZIPBALL
 
