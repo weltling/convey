@@ -1,3 +1,4 @@
+version: "{branch}.{build}"
 
 image: Visual Studio 2019
 
@@ -17,9 +18,12 @@ build_script:
                 nmake
 
 after_build:
-        cmd: |
-                set ZIPBALL=convey-%APPVEYOR_REPO_COMMIT:~0,8%.zip
+        ps: |
+                $s=[IO.File]::ReadAllText("config.h")
+                $s -match 'VERSION\s*""([^^"]+)""'
+                $version = $Matches.1
+                $ZIPBALL="convey-" + $version + "-" + $env:ARCH + ".zip"
                 cd c:\projects\convey
-                7z a %ZIPBALL% convey.exe convey.pdb LICENSE README.md
-                appveyor PushArtifact %ZIPBALL%
+                7z a $ZIPBALL convey.exe convey.pdb LICENSE README.md
+                Push-AppveyorArtifact $ZIPBALL
 

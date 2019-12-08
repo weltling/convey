@@ -1,4 +1,6 @@
 
+VERSION=0.2.0-dev
+
 !if "$(CXX)" == ""
 CXX=cl.exe
 !endif
@@ -29,6 +31,7 @@ all: $(OBJ)
 	"$(LD)" $(LDFLAGS) $(OBJ) $(LIBS) /out:$(EXE_BASE_NAME).exe
 
 $(OBJ):
+	@echo #define VERSION "$(VERSION)" > config.h
 	"$(CXX)" $(CXXFLAGS) /c $(SRC)
 
 clean:

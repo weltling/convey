@@ -38,6 +38,8 @@
 #include <atomic>
 
 #include "popl.hpp"
+
+#include "config.h"
 /* }}} */
 
 /* {{{ Global decls */
@@ -59,7 +61,6 @@ static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 
 #define BUF_SIZE 4096
-#define VERSION "0.2.0-dev"
 
 struct convey_conf {
 	bool verbose;
