@@ -24,15 +24,15 @@ after_build:
                 Push-AppveyorArtifact $ZIPBALL
 
 deploy:
-        - release: convey-$(APPVEYOR_BUILD_VERSION)
-        - description: Convey serial port communication tool.
-        - provider: GitHub
-        - auth_token:
+        release: convey-$(APPVEYOR_BUILD_VERSION)
+        description: Convey serial port communication tool.
+        provider: GitHub
+        auth_token:
                 secure: 3G2RxLQc+/+CDj6kNfeYG3tfVvSD4tAETGeP4MqxaFRipmyt7TsCjERm2LlkqIff
-        - artifact: c:\projects\convey\*.zip
-        - draft: false
-        - prerelease: false
-          on:
-                  APPVEYOR_REPO_TAG: true
+        artifact: c:\projects\convey\*.zip
+        draft: false
+        prerelease: false
+        on:
+                APPVEYOR_REPO_TAG: true
 
 version: 0.2.0-dev 
