@@ -19,7 +19,7 @@ build_script:
 
 after_build:
         ps: |
-                $d=c:\projects\convey
+                $d='c:\projects\convey'
                 $s=[IO.File]::ReadAllText("$d\config.h")
                 $s -match 'VERSION\s*""([^^"]+)""'
                 $version = $Matches.1
