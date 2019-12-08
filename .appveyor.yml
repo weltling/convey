@@ -5,6 +5,8 @@ image: Visual Studio 2019
 
 clone_folder: c:\projects\convey
 
+skip_tags: true
+
 environment:
         matrix:
                 - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
@@ -31,14 +33,15 @@ after_build:
                 Push-AppveyorArtifact $ZIPBALL
 
 deploy:
-        release: convey-$(APPVEYOR_REPO_TAG_NAME)
-        description: Convey serial port communication tool.
-        provider: GitHub
-        auth_token:
-                secure: 3G2RxLQc+/+CDj6kNfeYG3tfVvSD4tAETGeP4MqxaFRipmyt7TsCjERm2LlkqIff
-        artifact: c:\projects\convey\*.zip
-        draft: false
-        prerelease: false
-        on:
-                APPVEYOR_REPO_TAG: true
+        - provider: GitHub
+          release: convey-$(APPVEYOR_REPO_TAG_NAME)
+          #description: Convey serial port communication tool.
+          description: ''
+          auth_token:
+                  secure: 3G2RxLQc+/+CDj6kNfeYG3tfVvSD4tAETGeP4MqxaFRipmyt7TsCjERm2LlkqIff
+          artifact: /projects/convey/.*\.zip
+          draft: false
+          prerelease: false
+          on:
+                  APPVEYOR_REPO_TAG: true
 
