@@ -29,7 +29,7 @@ SRC=main.cxx
 
 all: $(OBJ)
 	"$(LD)" $(LDFLAGS) $(OBJ) $(LIBS) /out:$(EXE_BASE_NAME).exe
-	@if "$(APPVEYOR)" equ "True" echo version: $(VERSION) >> .appveyor.yml
+	@if "$(APPVEYOR)" equ "True" echo version: $(VERSION).{build} >> .appveyor.yml
 
 $(OBJ):
 	@echo #define VERSION "$(VERSION)" > config.h

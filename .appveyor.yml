@@ -37,4 +37,3 @@ deploy:
         on:
                 APPVEYOR_REPO_TAG: true
 
-version: 0.2.0-dev 
