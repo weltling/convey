@@ -1,4 +1,6 @@
 
+version: "{branch}.{build}"
+
 image: Visual Studio 2019
 
 clone_folder: c:\projects\convey
@@ -21,12 +23,13 @@ build_script:
 after_build:
         ps: |
                 $d = 'c:\projects\convey'
-                $ZIPBALL="$d\convey-" + $env:APPVEYOR_BUILD_VERSION + "-" + $env:ARCH + ".zip"
+                $convey_version = [regex]::Match([IO.File]::ReadAllText("$d\config.h"), 'VERSION\s*"([^"]+)"').captures.groups[1].value -Replace ".*_"
+                $ZIPBALL="$d\convey-" + $convey_version + "-" + $env:ARCH + ".zip"
                 7z a $ZIPBALL $d\convey.exe $d\convey.pdb $d\LICENSE $d\README.md
                 Push-AppveyorArtifact $ZIPBALL
 
 deploy:
-        release: convey-$(APPVEYOR_BUILD_VERSION)
+        release: convey-$(APPVEYOR_REPO_TAG_NAME)
         description: Convey serial port communication tool.
         provider: GitHub
         auth_token:
