@@ -1,0 +1,25 @@
+
+image: Visual Studio 2019
+
+clone_folder: c:\projects\convey
+
+environment:
+        matrix:
+                - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+                  ARCH: x86
+                - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+                  ARCH: amd64
+
+build_script:
+        cmd: |
+                cd c:\projects\convey
+                call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvarsall.bat" %ARCH%
+                nmake
+
+after_build:
+        cmd: |
+                set ZIPBALL=convey-%APPVEYOR_REPO_COMMIT:~0,8%.zip
+                cd c:\projects\convey
+                7z a %ZIPBALL% convey.exe convey.pdb LICENSE README.md
+                appveyor PushArtifact %ZIPBALL%
+
