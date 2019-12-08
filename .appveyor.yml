@@ -19,11 +19,11 @@ build_script:
 
 after_build:
         ps: |
-                Set-Location -Path c:\projects\convey
-                $s=[IO.File]::ReadAllText("config.h")
+                $d=c:\projects\convey
+                $s=[IO.File]::ReadAllText("$d\config.h")
                 $s -match 'VERSION\s*""([^^"]+)""'
                 $version = $Matches.1
-                $ZIPBALL="convey-" + $version + "-" + $env:ARCH + ".zip"
-                7z a $ZIPBALL convey.exe convey.pdb LICENSE README.md
+                $ZIPBALL="$d\convey-" + $version + "-" + $env:ARCH + ".zip"
+                7z a $ZIPBALL $d\convey.exe $d\convey.pdb $d\LICENSE $d\README.md
                 Push-AppveyorArtifact $ZIPBALL
 
