@@ -9,6 +9,8 @@ environment:
                   ARCH: x86
                 - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
                   ARCH: amd64
+                - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+                  ARCH: x86_arm
 
 build_script:
         cmd: |
