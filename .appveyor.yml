@@ -20,7 +20,7 @@ build_script:
 after_build:
         ps: |
                 cd c:\projects\convey
-                $s=[IO.File]::ReadAllText("config.h")
+                $s=[IO.File]::ReadAllText("\.config.h")
                 $s -match 'VERSION\s*""([^^"]+)""'
                 $version = $Matches.1
                 $ZIPBALL="convey-" + $version + "-" + $env:ARCH + ".zip"
