@@ -12,7 +12,9 @@ environment:
                 - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
                   ARCH: amd64
                 - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-                  ARCH: x86_arm
+                  ARCH: amd64_arm
+                - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+                  ARCH: amd64_arm64
 
 build_script:
         cmd: |
