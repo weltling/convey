@@ -19,12 +19,9 @@ build_script:
 
 after_build:
         ps: |
-                $d='c:\projects\convey'
-                $s=[IO.File]::ReadAllText("$d\config.h")
-                $s -match 'VERSION\s*""([^^"]+)""'
+                $d = 'c:\projects\convey'
+                [IO.File]::ReadAllText("$d\config.h") -match 'VERSION\s*""([^^"]+)""'
                 $convey_version = $matches[1]
-                echo $convey_version
-                echo $s
                 $ZIPBALL="$d\convey-" + $convey_version + "-" + $env:ARCH + ".zip"
                 7z a $ZIPBALL $d\convey.exe $d\convey.pdb $d\LICENSE $d\README.md
                 Push-AppveyorArtifact $ZIPBALL
