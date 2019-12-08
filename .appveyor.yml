@@ -22,7 +22,7 @@ after_build:
                 $d='c:\projects\convey'
                 $s=[IO.File]::ReadAllText("$d\config.h")
                 $s -match 'VERSION\s*""([^^"]+)""'
-                $convey_version = $Matches.1
+                $convey_version = $matches[1]
                 echo $convey_version
                 echo $s
                 $ZIPBALL="$d\convey-" + $convey_version + "-" + $env:ARCH + ".zip"
