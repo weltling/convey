@@ -534,6 +534,8 @@ int main(int argc, char** argv)
 					is_error = true;
 					return;
 				}
+			} else {
+				std::this_thread::sleep_for(std::chrono::milliseconds(3));
 			}
 		}
 		return;
@@ -568,6 +570,8 @@ int main(int argc, char** argv)
 					is_error = true;
 					return;
 				}
+			} else {
+				std::this_thread::sleep_for(std::chrono::milliseconds(3));
 			}
 		}
 	});
