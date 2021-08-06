@@ -48,7 +48,9 @@ View configured COM ports on a VM.
 
 ### Inside the VM
 
-Add `console=ttyS0,115200 console=tty0` to the kernel parameters.
+Add `console=ttyS0,115200 console=tty0` to the kernel parameters. Note, that `ttyS0` is what is usually
+available on a typical setup. Depending on the hardware and system configuration, this device name can
+be different.
 
 ### Optional
 
@@ -82,10 +84,24 @@ Invoke WSL on an elevated console and run
 
 `socat PTY,link=/tmp/my-vm-pty,raw,echo=0 SYSTEM:"while true; do ./convey.exe //./pipe/<pipe name>; sleep 0.1; done"`
 
-## Inside the VM, bring the kernel into debug mode
+## VM setup
+
+Add `nokaslr` to the kernel command line.
+
+See also a more detailed documentation on the (kgdb)[https://www.kernel.org/doc/html/v4.17/dev-tools/kgdb.html] page.
+
+### Turn on kernel debug mode
+
+#### Method 1
+
+Inside the VM, execute the commands below:
 
 - `echo ttyS0 > /sys/module/kgdboc/parameters/kgdboc`
 - `echo g > /proc/sysrq-trigger`
+
+#### Method 2
+
+Add a suitable configuration to the kernel command line, for example `kgdboc=ttyS0,115200 kgdbwait`.
 
 ## On host, start debugging
 
@@ -135,6 +151,7 @@ Add `nokaslr` to the kernel parameters.
 - http://man7.org/linux/man-pages/man1/stty.1.html
 - https://linux.die.net/man/1/socat
 - https://stackoverflow.com/questions/14584504/problems-to-connect-gdb-over-an-serial-port-to-an-kgdb-build-kernel
+- https://unix.stackexchange.com/questions/125183/how-to-find-which-serial-port-is-in-use
 
 # TODO
 
