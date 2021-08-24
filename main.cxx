@@ -101,7 +101,7 @@ static void convey_error(DWORD c = -1)
 	);
 
 	if (ret) {
-		std::cout << "convey: " << buf << std::endl;
+		std::cout << "convey: 0x" << std::hex << c << ": " << buf << std::endl;
 
 		LocalFree(buf);
 	}
