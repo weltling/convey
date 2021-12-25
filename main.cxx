@@ -59,6 +59,7 @@ static bool is_console{false},
 			out_is_pipe{false};
 static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
+static std::atomic<bool> ctrl_mode{false};
 
 #define BUF_SIZE 4096
 
@@ -278,12 +279,6 @@ static void restore_console(void)
 	}
 }/*}}}*/
 
-static BOOL WINAPI ctrl_handler(DWORD sig)
-{/*{{{*/
-	restore_console();
-	return FALSE;
-}/*}}}*/
-
 static bool is_console_handle(HANDLE h)
 {/*{{{*/
 	DWORD mode;
@@ -296,7 +291,6 @@ static void setup_console(void)
 	orig_cocp = GetConsoleOutputCP();
 	SetConsoleOutputCP(65001U);
 	SetConsoleCP(65001U);
-	SetConsoleCtrlHandler(ctrl_handler, TRUE);
 
 	if (!conf.no_xterm) {
 		DWORD mode;
@@ -519,7 +513,8 @@ int main(int argc, char** argv)
 				return;
 			}
 
-			if (bytes) {
+			/* Do not send bytes typed in the ctrl mode. */
+			if (bytes && !ctrl_mode) {
 				if (conf.no_xterm) {
 					// Cut out CRLF.
 					// TODO parametrize this, if needed
@@ -576,8 +571,33 @@ int main(int argc, char** argv)
 		}
 	});
 
+	std::thread t2([]() {
+		// Watch keystrokes to mimic screen/minicom command approach.
+		// TODO yet it's simple, but integrating some curses for better control would be great.
+		while (true) {
+			if (!ctrl_mode && (GetAsyncKeyState(VK_CONTROL) & 0x8000)) {
+				ctrl_mode = true;
+				if (!(GetAsyncKeyState('A') & 0x8000)) {
+					ctrl_mode = false;
+				}
+			}
+			if (ctrl_mode && (GetAsyncKeyState('Q') & 0x8000)) {
+				ctrl_mode = false;
+				if (conf.verbose) {
+					std::cout << std::endl << "convey: ctrl-a q sent, exit" << std::endl;
+				}
+				if (is_console) {
+					restore_console();
+				}
+				ExitProcess(0);
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(128));
+		}
+	});
+
 	t0.join();
 	t1.join();
+	t2.join();
 
 	convey_shutdown();
 
