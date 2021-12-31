@@ -263,7 +263,6 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 static bool convey_conf_shutdown()
 {/*{{{*/
-	shutting_down = true;
 	return true;
 }/*}}}*/
 
@@ -274,8 +273,12 @@ static void restore_console(void)
 	SetConsoleOutputCP(orig_cocp);
 	SetConsoleCP(orig_ccp);
 	if (!conf.no_xterm) {
-		SetConsoleMode(in, orig_in_cmode);
-		SetConsoleMode(out, orig_out_cmode);
+		if (INVALID_HANDLE_VALUE != in) {
+			SetConsoleMode(in, orig_in_cmode);
+		}
+		if (INVALID_HANDLE_VALUE != out) {
+			SetConsoleMode(out, orig_out_cmode);
+		}
 	}
 }/*}}}*/
 
@@ -438,6 +441,8 @@ static convey_setup_status convey_startup(int argc, char **argv)
 } while (0)
 static void convey_shutdown(void)
 {/*{{{*/
+	shutting_down = true;
+
 	if (is_console) {
 		restore_console();
 	}
@@ -586,9 +591,7 @@ int main(int argc, char** argv)
 				if (conf.verbose) {
 					std::cout << std::endl << "convey: ctrl-a q sent, exit" << std::endl;
 				}
-				if (is_console) {
-					restore_console();
-				}
+				convey_shutdown();
 				ExitProcess(0);
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(128));
