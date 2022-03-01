@@ -69,6 +69,7 @@ struct convey_conf {
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
+	uint8_t parity;
 };
 /*static convey_conf conf = {
 	.verbose = false,
@@ -176,6 +177,32 @@ static decltype(auto) convey_get_baud(std::shared_ptr<popl::Value<uint32_t>>& op
 	return b;
 }
 
+static decltype(auto) convey_get_parity(std::shared_ptr<popl::Value<std::string>>& opt)
+{
+	std::string p;
+	uint8_t ret = NOPARITY;
+
+	if (opt->is_set()) {
+		p = opt->value();
+		if (!p.compare("even")) {
+			ret = EVENPARITY;
+		} else if (!p.compare("mark")) {
+			ret = MARKPARITY;
+		} else if (!p.compare("no")) {
+			ret = NOPARITY;
+		} else if (!p.compare("odd")) {
+			ret = ODDPARITY;
+		} else if (!p.compare("space")) {
+			ret = SPACEPARITY;
+		} else {
+			std::cerr << "convey: unsupported parity '" << p << "'" << std::endl;
+			return ((decltype(ret))-1);
+		}
+	}
+
+	return ret;
+}
+
 static void convey_usage_print(popl::OptionParser& op)
 {/*{{{*/
 	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
@@ -190,6 +217,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	popl::OptionParser op{};
 	auto baud_opt = op.add<popl::Value<uint32_t>>("b", "baud", "Baud rate in bps, only relevant for serial communication.", CBR_115200);
+	auto parity_opt = op.add<popl::Value<std::string>>("", "parity", "Parity scheme (even, mark, no, odd, space)", "no");
 	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
 	auto pipe_path_opt = op.add<popl::Value<std::string>>("d", "dev", "Path to the named pipe or COM device.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
@@ -243,6 +271,11 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 		conf.baud = convey_get_baud(baud_opt);
 		if (((decltype(conf.baud))-1) == conf.baud) {
+			return convey_setup_exit_err;
+		}
+
+		conf.parity = convey_get_parity(parity_opt);
+		if (((decltype(conf.parity))-1) == conf.parity) {
 			return convey_setup_exit_err;
 		}
 	}
@@ -378,7 +411,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		dcb.fBinary = true;
 		dcb.BaudRate = conf.baud;
 		dcb.ByteSize = 8;
-		dcb.Parity = NOPARITY;
+		dcb.Parity = conf.parity;
 		dcb.StopBits = ONESTOPBIT;
 		dcb.fRtsControl = RTS_CONTROL_ENABLE;
 		dcb.fDtrControl = DTR_CONTROL_ENABLE;
