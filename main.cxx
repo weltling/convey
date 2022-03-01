@@ -191,7 +191,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	popl::OptionParser op{};
 	auto baud_opt = op.add<popl::Value<uint32_t>>("b", "baud", "Baud rate in bps, only relevant for serial communication.", CBR_115200);
 	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
-	auto pipe_path_opt = op.add<popl::Value<std::string>>("", "dev", "Path to the named pipe or COM device.");
+	auto pipe_path_opt = op.add<popl::Value<std::string>>("d", "dev", "Path to the named pipe or COM device.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
 	auto no_xterm_opt = op.add<popl::Switch>("", "no-xterm", "Disable xterm support.");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
