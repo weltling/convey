@@ -71,6 +71,7 @@ struct convey_conf {
 	uint32_t baud;
 	uint8_t parity;
 	uint8_t stop_bits;
+	uint8_t byte_size;
 };
 /*static convey_conf conf = {
 	.verbose = false,
@@ -242,6 +243,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	auto baud_opt = op.add<popl::Value<uint32_t>>("b", "baud", "Baud rate in bps, only relevant for serial communication.", CBR_115200);
 	auto parity_opt = op.add<popl::Value<std::string>>("", "parity", "Parity scheme (even, mark, no, odd, space).", "no");
 	auto stop_bits_opt = op.add<popl::Value<std::string>>("", "stop-bits", "Stop bits (1, 1.5, 2).", "1");
+	auto byte_size_opt = op.add<popl::Value<uint32_t>>("", "byte-size", "The number of bits in a byte.", 8);
 	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
 	auto pipe_path_opt = op.add<popl::Value<std::string>>("d", "dev", "Path to the named pipe or COM device.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
@@ -306,6 +308,12 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		conf.stop_bits = convey_get_stop_bits(stop_bits_opt);
 		if (((decltype(conf.stop_bits))-1) == conf.stop_bits) {
 			return convey_setup_exit_err;
+		}
+
+		if (byte_size_opt->is_set()) {
+			conf.byte_size = byte_size_opt->value();
+		} else {
+			conf.byte_size = byte_size_opt->get_default();
 		}
 	}
 	catch (const popl::invalid_option& e)
@@ -439,7 +447,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 
 		dcb.fBinary = true;
 		dcb.BaudRate = conf.baud;
-		dcb.ByteSize = 8;
+		dcb.ByteSize = conf.byte_size;
 		dcb.Parity = conf.parity;
 		dcb.StopBits = conf.stop_bits;
 		dcb.fRtsControl = RTS_CONTROL_ENABLE;
