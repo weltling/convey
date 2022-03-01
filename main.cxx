@@ -381,6 +381,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		dcb.Parity = NOPARITY;
 		dcb.StopBits = ONESTOPBIT;
 		dcb.fRtsControl = RTS_CONTROL_ENABLE;
+		dcb.fDtrControl = DTR_CONTROL_ENABLE;
 
 		if (!::SetCommState(pipe, &dcb)) {
 			convey_error();
