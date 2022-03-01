@@ -375,7 +375,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 			return convey_setup_exit_err;
 		}
 
-		/* TODO Parametrize this. */
+		dcb.fBinary = true;
 		dcb.BaudRate = conf.baud;
 		dcb.ByteSize = 8;
 		dcb.Parity = NOPARITY;
