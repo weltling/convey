@@ -70,6 +70,7 @@ struct convey_conf {
 	double pipe_poll;
 	uint32_t baud;
 	uint8_t parity;
+	uint8_t stop_bits;
 };
 /*static convey_conf conf = {
 	.verbose = false,
@@ -203,6 +204,28 @@ static decltype(auto) convey_get_parity(std::shared_ptr<popl::Value<std::string>
 	return ret;
 }
 
+static decltype(auto) convey_get_stop_bits(std::shared_ptr<popl::Value<std::string>>& opt)
+{
+	std::string p;
+	uint8_t ret = ONESTOPBIT;
+
+	if (opt->is_set()) {
+		p = opt->value();
+		if (!p.compare("1")) {
+			ret = ONESTOPBIT;
+		} else if (!p.compare("1.5")) {
+			ret = ONE5STOPBITS;
+		} else if (!p.compare("2")) {
+			ret = TWOSTOPBITS;
+		} else {
+			std::cerr << "convey: unsupported stop bits '" << p << "'" << std::endl;
+			return ((decltype(ret))-1);
+		}
+	}
+
+	return ret;
+}
+
 static void convey_usage_print(popl::OptionParser& op)
 {/*{{{*/
 	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
@@ -217,7 +240,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	popl::OptionParser op{};
 	auto baud_opt = op.add<popl::Value<uint32_t>>("b", "baud", "Baud rate in bps, only relevant for serial communication.", CBR_115200);
-	auto parity_opt = op.add<popl::Value<std::string>>("", "parity", "Parity scheme (even, mark, no, odd, space)", "no");
+	auto parity_opt = op.add<popl::Value<std::string>>("", "parity", "Parity scheme (even, mark, no, odd, space).", "no");
+	auto stop_bits_opt = op.add<popl::Value<std::string>>("", "stop-bits", "Stop bits (1, 1.5, 2).", "1");
 	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
 	auto pipe_path_opt = op.add<popl::Value<std::string>>("d", "dev", "Path to the named pipe or COM device.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
@@ -276,6 +300,11 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 		conf.parity = convey_get_parity(parity_opt);
 		if (((decltype(conf.parity))-1) == conf.parity) {
+			return convey_setup_exit_err;
+		}
+
+		conf.stop_bits = convey_get_stop_bits(stop_bits_opt);
+		if (((decltype(conf.stop_bits))-1) == conf.stop_bits) {
 			return convey_setup_exit_err;
 		}
 	}
@@ -412,7 +441,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		dcb.BaudRate = conf.baud;
 		dcb.ByteSize = 8;
 		dcb.Parity = conf.parity;
-		dcb.StopBits = ONESTOPBIT;
+		dcb.StopBits = conf.stop_bits;
 		dcb.fRtsControl = RTS_CONTROL_ENABLE;
 		dcb.fDtrControl = DTR_CONTROL_ENABLE;
 
