@@ -277,7 +277,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
 	auto no_xterm_opt = op.add<popl::Switch>("", "no-xterm", "Disable xterm support.");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
-	auto version_opt = op.add<popl::Switch>("", "version", "Output version information and exit.");
+	auto version_opt = op.add<popl::Switch>("V", "version", "Output version information and exit.");
 
 	try {
 		op.parse(argc, argv);
