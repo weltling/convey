@@ -63,6 +63,13 @@ static std::atomic<bool> ctrl_mode{false};
 
 #define BUF_SIZE 4096
 
+enum convey_flow_control {
+	convey_flow_control_none,
+	convey_flow_control_xon,
+	convey_flow_control_rts,
+	convey_flow_control_dsr
+};
+
 struct convey_conf {
 	bool verbose;
 	bool no_xterm;
@@ -72,13 +79,9 @@ struct convey_conf {
 	uint8_t parity;
 	uint8_t stop_bits;
 	uint8_t byte_size;
+	convey_flow_control flow_control;
 };
-/*static convey_conf conf = {
-	.verbose = false,
-	.no_xterm = false,
-	.pipe_path = std::string(""),
-	.pall = 0
-};*/
+
 static convey_conf conf{0};
 
 enum convey_setup_status {
@@ -227,6 +230,30 @@ static decltype(auto) convey_get_stop_bits(std::shared_ptr<popl::Value<std::stri
 	return ret;
 }
 
+static decltype(auto) convey_get_flow_control(std::shared_ptr<popl::Value<std::string>>& opt)
+{
+	std::string p;
+	convey_flow_control ret;
+
+	if (opt->is_set()) {
+		p = opt->value();
+		if (!p.compare("none")) {
+			ret = convey_flow_control_none;
+		} else if (!p.compare("xon")) {
+			ret = convey_flow_control_xon;
+		} else if (!p.compare("rts")) {
+			ret = convey_flow_control_rts;
+		} else if (!p.compare("dsr")) {
+			ret = convey_flow_control_dsr;
+		} else {
+			std::cerr << "convey: unsupported flow control '" << p << "'" << std::endl;
+			return ((decltype(ret))-1);
+		}
+	}
+
+	return ret;
+}
+
 static void convey_usage_print(popl::OptionParser& op)
 {/*{{{*/
 	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
@@ -244,6 +271,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	auto parity_opt = op.add<popl::Value<std::string>>("", "parity", "Parity scheme (even, mark, no, odd, space).", "no");
 	auto stop_bits_opt = op.add<popl::Value<std::string>>("", "stop-bits", "Stop bits (1, 1.5, 2).", "1");
 	auto byte_size_opt = op.add<popl::Value<uint32_t>>("", "byte-size", "The number of bits in a byte.", 8);
+	auto flow_control_opt = op.add<popl::Value<std::string>>("", "flow-control", "Flow control (none, xon, rts, dsr).", "none");
 	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
 	auto pipe_path_opt = op.add<popl::Value<std::string>>("d", "dev", "Path to the named pipe or COM device.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
@@ -315,6 +343,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		} else {
 			conf.byte_size = byte_size_opt->get_default();
 		}
+
+		conf.flow_control = convey_get_flow_control(flow_control_opt);
 	}
 	catch (const popl::invalid_option& e)
 	{
@@ -450,8 +480,23 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		dcb.ByteSize = conf.byte_size;
 		dcb.Parity = conf.parity;
 		dcb.StopBits = conf.stop_bits;
+
 		dcb.fRtsControl = RTS_CONTROL_ENABLE;
 		dcb.fDtrControl = DTR_CONTROL_ENABLE;
+		dcb.fOutX = false;
+		dcb.fInX = false;
+		if (convey_flow_control_rts == conf.flow_control) {
+			dcb.fOutxCtsFlow = true;
+			dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
+		} else if (convey_flow_control_dsr == conf.flow_control) {
+			dcb.fOutxDsrFlow = true;
+			dcb.fDtrControl = DTR_CONTROL_HANDSHAKE;
+		} else if (convey_flow_control_xon == conf.flow_control) {
+			dcb.fOutX = true;
+			dcb.fInX = true;
+		} else if (((decltype(conf.flow_control))-1) == conf.flow_control) {
+			return convey_setup_exit_err;
+		}
 
 		if (!::SetCommState(pipe, &dcb)) {
 			convey_error();
