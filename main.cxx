@@ -184,11 +184,13 @@ static decltype(auto) convey_get_baud(std::shared_ptr<popl::Value<uint32_t>>& op
 
 static decltype(auto) convey_get_parity(std::shared_ptr<popl::Value<std::string>>& opt)
 {
-	std::string p;
 	uint8_t ret = NOPARITY;
 
 	if (opt->is_set()) {
-		p = opt->value();
+		std::string p{opt->value()};
+		for (size_t i = 0; i < p.size(); i++) {
+			p[i] = std::tolower(p[i]);
+		}
 		if (!p.compare("even")) {
 			ret = EVENPARITY;
 		} else if (!p.compare("mark")) {
@@ -201,7 +203,7 @@ static decltype(auto) convey_get_parity(std::shared_ptr<popl::Value<std::string>
 			ret = SPACEPARITY;
 		} else {
 			std::cerr << "convey: unsupported parity '" << p << "'" << std::endl;
-			return ((decltype(ret))-1);
+			ret = ((decltype(ret))-1);
 		}
 	}
 
@@ -223,7 +225,7 @@ static decltype(auto) convey_get_stop_bits(std::shared_ptr<popl::Value<std::stri
 			ret = TWOSTOPBITS;
 		} else {
 			std::cerr << "convey: unsupported stop bits '" << p << "'" << std::endl;
-			return ((decltype(ret))-1);
+			ret = ((decltype(ret))-1);
 		}
 	}
 
@@ -232,11 +234,13 @@ static decltype(auto) convey_get_stop_bits(std::shared_ptr<popl::Value<std::stri
 
 static decltype(auto) convey_get_flow_control(std::shared_ptr<popl::Value<std::string>>& opt)
 {
-	std::string p;
-	convey_flow_control ret;
+	convey_flow_control ret = convey_flow_control_none;
 
 	if (opt->is_set()) {
-		p = opt->value();
+		std::string p{opt->value()};
+		for (size_t i = 0; i < p.size(); i++) {
+			p[i] = std::tolower(p[i]);
+		}
 		if (!p.compare("none")) {
 			ret = convey_flow_control_none;
 		} else if (!p.compare("xon/xoff")) {
@@ -247,7 +251,7 @@ static decltype(auto) convey_get_flow_control(std::shared_ptr<popl::Value<std::s
 			ret = convey_flow_control_dsrdtr;
 		} else {
 			std::cerr << "convey: unsupported flow control '" << p << "'" << std::endl;
-			return ((decltype(ret))-1);
+			ret = ((decltype(ret))-1);
 		}
 	}
 
