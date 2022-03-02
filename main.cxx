@@ -476,6 +476,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		}
 
 		dcb.fBinary = true;
+		dcb.fNull = false;
 		dcb.BaudRate = conf.baud;
 		dcb.ByteSize = conf.byte_size;
 		dcb.Parity = conf.parity;
