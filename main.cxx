@@ -477,15 +477,21 @@ static convey_setup_status convey_startup(int argc, char **argv)
 
 		dcb.fBinary = true;
 		dcb.fNull = false;
+		dcb.fErrorChar = false;
+		dcb.fAbortOnError = false;
 		dcb.BaudRate = conf.baud;
 		dcb.ByteSize = conf.byte_size;
 		dcb.Parity = conf.parity;
 		dcb.StopBits = conf.stop_bits;
 
+		dcb.fOutxCtsFlow = false;
 		dcb.fRtsControl = RTS_CONTROL_ENABLE;
+		dcb.fOutxDsrFlow = false;
 		dcb.fDtrControl = DTR_CONTROL_ENABLE;
+		dcb.fTXContinueOnXoff = false;
 		dcb.fOutX = false;
 		dcb.fInX = false;
+		dcb.fDsrSensitivity = false;
 		if (convey_flow_control_rts == conf.flow_control) {
 			dcb.fOutxCtsFlow = true;
 			dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
