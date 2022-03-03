@@ -514,7 +514,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 			return convey_setup_exit_err;
 		}
 
-		COMMTIMEOUTS timeouts;
+		COMMTIMEOUTS timeouts = {0};
 		timeouts.ReadIntervalTimeout = MAXDWORD;
 		timeouts.ReadTotalTimeoutMultiplier = 0;
 		timeouts.ReadTotalTimeoutConstant = 0;
