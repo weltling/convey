@@ -543,7 +543,6 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		return convey_setup_exit_err;
 	}
 	out_is_pipe = GetFileType(out) == FILE_TYPE_PIPE;
-	//std::cout << "out_is_pipe=" << out_is_pipe << std::endl;
 
 	e_pipe_w = CreateEvent(nullptr, false, false, nullptr);
 	e_pipe_r = CreateEvent(nullptr, false, false, nullptr);
