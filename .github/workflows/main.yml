@@ -14,16 +14,15 @@ jobs:
       matrix:
         arch: [x86, amd64, amd64_arm, amd64_arm64]
     runs-on: windows-2022
-    defaults:
-      run:
-        shell: powershell
     steps:
       - uses: actions/checkout@v2
       - name: Compile
+        shell: cmd
         run: |
-          Invoke-Item "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.arch }}
+          call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.arch }}
           nmake
       - name: Package
+        shell: powershell
         run: |
           $convey_version = [regex]::Match([IO.File]::ReadAllText("config.h"), 'VERSION\s*"([^"]+)"').captures.groups[1].value
           $ZIPBALL="$d\convey-" + $convey_version + "-" + ($env:ARCH -Replace ".*_") + ".zip"
