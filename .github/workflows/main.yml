@@ -25,5 +25,5 @@ jobs:
         shell: powershell
         run: |
           $convey_version = [regex]::Match([IO.File]::ReadAllText("config.h"), 'VERSION\s*"([^"]+)"').captures.groups[1].value
-          $ZIPBALL="$d\convey-" + $convey_version + "-" + ($env:ARCH -Replace ".*_") + ".zip"
-          7z a $ZIPBALL $d\convey.exe $d\convey.pdb $d\LICENSE $d\README.md
+          $ZIPBALL="convey-" + $convey_version + "-" + ($env:ARCH -Replace ".*_") + ".zip"
+          7z a $ZIPBALL convey.exe convey.pdb LICENSE README.md
