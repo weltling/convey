@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-2022
     defaults:
       run:
-        shell: ps
+        shell: powershell
     steps:
       - uses: actions/checkout@v2
       - name: Compile
