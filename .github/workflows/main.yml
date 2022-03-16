@@ -29,5 +29,5 @@ jobs:
           7z a $ZIPBALL convey.exe convey.pdb LICENSE README.md 
       - uses: actions/upload-artifact@v3
         with:
-          path: *.zip
+          path: ./*.zip
         
