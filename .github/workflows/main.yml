@@ -19,20 +19,17 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
-      - name: Get short commit SHA
-        id: short-hash
-        shell: bash
-        run: echo "::set-output name=sha8::$(echo ${GITHUB_SHA} | cut -c1-8)"
-      - name: Compile
-        run: nmake
-      - name: Package
+      - name: Set environment vars
         shell: powershell
         run: |
+          echo ("GITHUB_SHA_SHORT=" + $env:GITHUB_SHA.substring(0, 8)) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
           $convey_version = [regex]::Match([IO.File]::ReadAllText("config.h"), 'VERSION\s*"([^"]+)"').captures.groups[1].value
-          $ZIPBALL="convey-" + $convey_version + "-" + ($env:Platform -Replace ".*_") + ".zip"
-          7z a $ZIPBALL convey.exe convey.pdb LICENSE README.md 
+          echo ("CONVEY_VERSION=" + $convey_version) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
+          $target_arch = $env:Platform -Replace ".*_"
+          echo ("TARGET_ARCH=" + $target_arch) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
+      - name: Compile
+        run: nmake
       - uses: actions/upload-artifact@v3
         with:
-          name: convey-${{ steps.short-hash.outputs.sha8 }}
-          path: ./*.zip
-        
+          name: convey-${{ env.CONVEY_VERSION }}-${{ env.TARGET_ARCH }}-${{ env.GITHUB_SHA_SHORT }}
+          path: convey.exe convey.pdb LICENSE README.md 
