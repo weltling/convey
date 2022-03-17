@@ -32,4 +32,8 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           name: convey-${{ env.CONVEY_VERSION }}-${{ env.TARGET_ARCH }}-${{ env.GITHUB_SHA_SHORT }}
-          path: convey.exe convey.pdb LICENSE README.md 
+          path: |
+            convey.exe
+            convey.pdb
+            LICENSE
+            README.md 
