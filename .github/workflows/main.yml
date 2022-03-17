@@ -19,6 +19,10 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
+      - name: Get short commit SHA
+        id: short-hash
+        shell: bash
+        run: echo "::set-output name=sha8::$(echo ${GITHUB_SHA} | cut -c1-8)"
       - name: Compile
         run: nmake
       - name: Package
@@ -29,6 +33,6 @@ jobs:
           7z a $ZIPBALL convey.exe convey.pdb LICENSE README.md 
       - uses: actions/upload-artifact@v3
         with:
-          name: convey-${GITHUB_SHA::8}
+          name: convey-${{ steps.short-hash.outputs.sha8 }}
           path: ./*.zip
         
