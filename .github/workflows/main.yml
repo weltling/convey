@@ -19,16 +19,16 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
-      - name: Compile convey
-        run: nmake
-      - name: Set environment vars
+      - name: Prepare environment vars
         shell: powershell
         run: |
-          echo ("GITHUB_SHA_SHORT=" + $env:GITHUB_SHA.substring(0, 8)) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
-          $convey_version = [regex]::Match([IO.File]::ReadAllText("config.h"), 'VERSION\s*"([^"]+)"').captures.groups[1].value
+          echo ("GITHUB_SHA_SHORT=" + $env:GITHUB_SHA.substring(0, 7)) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
+          $convey_version = [regex]::Match([IO.File]::ReadAllText("Makefile"), 'VERSION\s*=\s*(.+)').captures.groups[1].value
           echo ("CONVEY_VERSION=" + $convey_version) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
           $target_arch = $env:Platform -Replace ".*_"
           echo ("TARGET_ARCH=" + $target_arch) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
+      - name: Compile convey
+        run: nmake
       - uses: actions/upload-artifact@v3
         with:
           name: convey-${{ env.CONVEY_VERSION }}-${{ env.TARGET_ARCH }}-${{ env.GITHUB_SHA_SHORT }}
