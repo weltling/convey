@@ -25,7 +25,7 @@ jobs:
           echo ("GITHUB_SHA_SHORT=" + $env:GITHUB_SHA.substring(0, 7)) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
           $convey_version = [regex]::Match([IO.File]::ReadAllText("Makefile"), 'VERSION\s*=\s*(\S+)').captures.groups[1].value
           echo ("CONVEY_VERSION=" + $convey_version) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
-          $target_arch = $env:Platform -Replace ".*_"
+          $target_arch = "${{ matrix.arch }}" -Replace ".*_"
           echo ("TARGET_ARCH=" + $target_arch) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
       - name: Compile convey
         run: nmake
