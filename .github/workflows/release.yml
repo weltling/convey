@@ -28,6 +28,7 @@ jobs:
           path: release_url.txt
 
   publish:
+    needs: [ release ]
     strategy:
       matrix:
         arch: [x86, amd64, amd64_arm, amd64_arm64]
