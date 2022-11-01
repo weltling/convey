@@ -130,6 +130,10 @@ Use stty to set the desired columns and rows number, for example
 
 `(gdb) set substitute-path /sources/were/compiled/here /put/sources/here`
 
+To add multiple folders to be searched by GDB, use
+
+`(gdb) set dir /path/to/base/dir`
+
 Alternatively, unpack kernel sources under /usr/src/kernel or where ever else the kernel was built. 
 
 ## GDB tells `Remote replied unexpectedly to 'vMustReplyEmpty': vMustReplyEmpty`
@@ -150,6 +154,7 @@ Add `nokaslr` to the kernel parameters.
 - https://linux.die.net/man/1/socat
 - https://stackoverflow.com/questions/14584504/problems-to-connect-gdb-over-an-serial-port-to-an-kgdb-build-kernel
 - https://unix.stackexchange.com/questions/125183/how-to-find-which-serial-port-is-in-use
+- https://sourceware.org/gdb/onlinedocs/gdb/Source-Path.html
 
 # TODO
 
