@@ -144,6 +144,16 @@ Forgot to bring kernel into the debugging mode?
 
 Add `nokaslr` to the kernel parameters.
 
+# Sysrq cannot be sent due to the lockdown
+
+If the `lockdown=` option is on the kernel cmdline, it has to be removed.
+
+Some distribution might also allow to disable lockdown at runtime. In a VM, `Alt+SysRq+x` can be sent by:
+
+```
+$ echo 1 > /proc/sys/kernel/sysrq
+$ echo x > /proc/sysrq-trigger
+```
 
 # Links
 
