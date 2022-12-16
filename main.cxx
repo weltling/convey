@@ -706,6 +706,9 @@ int main(int argc, char** argv)
 		// Watch keystrokes to mimic screen/minicom command approach.
 		// TODO yet it's simple, but integrating some curses for better control would be great.
 		while (true) {
+			if (is_error || shutting_down) {
+				return;
+			}
 			if (!ctrl_mode && (GetAsyncKeyState(VK_CONTROL) & 0x8000)) {
 				ctrl_mode = true;
 				if (!(GetAsyncKeyState('A') & 0x8000)) {
