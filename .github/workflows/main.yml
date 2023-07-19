@@ -15,7 +15,7 @@ jobs:
         arch: [x86, amd64, amd64_arm, amd64_arm64]
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
