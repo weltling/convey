@@ -448,10 +448,12 @@ static convey_setup_status convey_startup(int argc, char **argv)
 	}
 	size_t elapsed = 0,
 		   step = 300 /* milliseconds*/;
+	bool conn_error;
 	do {
 		pipe = CreateFile(conf.pipe_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
 		rc = GetLastError();
-		if (INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc || ERROR_FILE_NOT_FOUND == rc) {
+		conn_error = INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc || ERROR_FILE_NOT_FOUND == rc;
+		if (conn_error) {
 			if (elapsed/1000 < conf.pipe_poll) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(step));
 				elapsed += step;
@@ -460,7 +462,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		}
 		break;
 	} while (true);
-	if (INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc) {
+	if (conn_error) {
 		convey_error(rc);
 		return convey_setup_exit_err;
 	}
