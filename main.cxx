@@ -202,31 +202,38 @@ static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED* ov, DWORD* bytes, bool& 
 	return true;
 }/*}}}*/
 
+static bool convey_baud_is_valid(uint32_t b)
+{
+	switch (b) {
+		case CBR_110:
+		case CBR_300:
+		case CBR_600:
+		case CBR_1200:
+		case CBR_2400:
+		case CBR_4800:
+		case CBR_9600:
+		case CBR_14400:
+		case CBR_19200:
+		case CBR_38400:
+		case CBR_57600:
+		case CBR_115200:
+		case CBR_128000:
+		case CBR_256000:
+			return true;
+		default:
+			return false;
+	}
+}
+
 static decltype(auto) convey_get_baud(std::shared_ptr<popl::Value<uint32_t>>& opt)
 {
 	uint32_t b;
-	
+
 	if (opt->is_set()) {
 		b = opt->value();
-		switch (b) {
-			default:
-				std::cerr << "convey: unsupported baud rate '" << b << "'" << std::endl;
-				return ((decltype(b))-1);
-			case CBR_110:
-			case CBR_300:
-			case CBR_600:
-			case CBR_1200:
-			case CBR_2400:
-			case CBR_4800:
-			case CBR_9600:
-			case CBR_14400:
-			case CBR_19200:
-			case CBR_38400:
-			case CBR_57600:
-			case CBR_115200:
-			case CBR_128000:
-			case CBR_256000:
-				break;
+		if (!convey_baud_is_valid(b)) {
+			std::cerr << "convey: unsupported baud rate '" << b << "'" << std::endl;
+			return ((decltype(b))-1);
 		}
 	} else {
 		b = opt->get_default();
@@ -235,54 +242,80 @@ static decltype(auto) convey_get_baud(std::shared_ptr<popl::Value<uint32_t>>& op
 	return b;
 }
 
+static uint8_t convey_parity_from_string(std::string p)
+{
+	for (size_t i = 0; i < p.size(); i++) {
+		p[i] = std::tolower(p[i]);
+	}
+	if (!p.compare("even")) {
+		return EVENPARITY;
+	} else if (!p.compare("mark")) {
+		return MARKPARITY;
+	} else if (!p.compare("no")) {
+		return NOPARITY;
+	} else if (!p.compare("odd")) {
+		return ODDPARITY;
+	} else if (!p.compare("space")) {
+		return SPACEPARITY;
+	}
+	return ((uint8_t)-1);
+}
+
 static decltype(auto) convey_get_parity(std::shared_ptr<popl::Value<std::string>>& opt)
 {
 	uint8_t ret = NOPARITY;
 
 	if (opt->is_set()) {
-		std::string p{opt->value()};
-		for (size_t i = 0; i < p.size(); i++) {
-			p[i] = std::tolower(p[i]);
-		}
-		if (!p.compare("even")) {
-			ret = EVENPARITY;
-		} else if (!p.compare("mark")) {
-			ret = MARKPARITY;
-		} else if (!p.compare("no")) {
-			ret = NOPARITY;
-		} else if (!p.compare("odd")) {
-			ret = ODDPARITY;
-		} else if (!p.compare("space")) {
-			ret = SPACEPARITY;
-		} else {
-			std::cerr << "convey: unsupported parity '" << p << "'" << std::endl;
-			ret = ((decltype(ret))-1);
+		ret = convey_parity_from_string(opt->value());
+		if (((decltype(ret))-1) == ret) {
+			std::cerr << "convey: unsupported parity '" << opt->value() << "'" << std::endl;
 		}
 	}
 
 	return ret;
 }
 
+static uint8_t convey_stop_bits_from_string(const std::string& p)
+{
+	if (!p.compare("1")) {
+		return ONESTOPBIT;
+	} else if (!p.compare("1.5")) {
+		return ONE5STOPBITS;
+	} else if (!p.compare("2")) {
+		return TWOSTOPBITS;
+	}
+	return ((uint8_t)-1);
+}
+
 static decltype(auto) convey_get_stop_bits(std::shared_ptr<popl::Value<std::string>>& opt)
 {
-	std::string p;
 	uint8_t ret = ONESTOPBIT;
 
 	if (opt->is_set()) {
-		p = opt->value();
-		if (!p.compare("1")) {
-			ret = ONESTOPBIT;
-		} else if (!p.compare("1.5")) {
-			ret = ONE5STOPBITS;
-		} else if (!p.compare("2")) {
-			ret = TWOSTOPBITS;
-		} else {
-			std::cerr << "convey: unsupported stop bits '" << p << "'" << std::endl;
-			ret = ((decltype(ret))-1);
+		ret = convey_stop_bits_from_string(opt->value());
+		if (((decltype(ret))-1) == ret) {
+			std::cerr << "convey: unsupported stop bits '" << opt->value() << "'" << std::endl;
 		}
 	}
 
 	return ret;
+}
+
+static convey_flow_control convey_flow_control_from_string(std::string p)
+{
+	for (size_t i = 0; i < p.size(); i++) {
+		p[i] = std::tolower(p[i]);
+	}
+	if (!p.compare("none")) {
+		return convey_flow_control_none;
+	} else if (!p.compare("xon/xoff")) {
+		return convey_flow_control_xonxoff;
+	} else if (!p.compare("rts/cts")) {
+		return convey_flow_control_rtscts;
+	} else if (!p.compare("dsr/dtr")) {
+		return convey_flow_control_dsrdtr;
+	}
+	return ((convey_flow_control)-1);
 }
 
 static decltype(auto) convey_get_flow_control(std::shared_ptr<popl::Value<std::string>>& opt)
@@ -290,21 +323,9 @@ static decltype(auto) convey_get_flow_control(std::shared_ptr<popl::Value<std::s
 	convey_flow_control ret = convey_flow_control_none;
 
 	if (opt->is_set()) {
-		std::string p{opt->value()};
-		for (size_t i = 0; i < p.size(); i++) {
-			p[i] = std::tolower(p[i]);
-		}
-		if (!p.compare("none")) {
-			ret = convey_flow_control_none;
-		} else if (!p.compare("xon/xoff")) {
-			ret = convey_flow_control_xonxoff;
-		} else if (!p.compare("rts/cts")) {
-			ret = convey_flow_control_rtscts;
-		} else if (!p.compare("dsr/dtr")) {
-			ret = convey_flow_control_dsrdtr;
-		} else {
-			std::cerr << "convey: unsupported flow control '" << p << "'" << std::endl;
-			ret = ((decltype(ret))-1);
+		ret = convey_flow_control_from_string(opt->value());
+		if (((decltype(ret))-1) == ret) {
+			std::cerr << "convey: unsupported flow control '" << opt->value() << "'" << std::endl;
 		}
 	}
 
