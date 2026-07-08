@@ -36,6 +36,7 @@
 #include <io.h>
 
 #include <cstring>
+#include <cstdlib>
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -525,10 +526,11 @@ static void convey_console_fail(void)
 	}
 }/*}}}*/
 
+static bool wsa_started = false;
+
 static bool convey_wsa_init(void)
 {/*{{{*/
-	static bool started = false;
-	if (started) {
+	if (wsa_started) {
 		return true;
 	}
 	WSADATA wsa;
@@ -537,8 +539,20 @@ static bool convey_wsa_init(void)
 		std::cerr << "convey: WSAStartup failed with " << r << std::endl;
 		return false;
 	}
-	started = true;
+	wsa_started = true;
 	return true;
+}/*}}}*/
+
+static void convey_final_cleanup(void)
+{/*{{{*/
+	if (INVALID_SOCKET != listen_sock) {
+		closesocket(listen_sock);
+		listen_sock = INVALID_SOCKET;
+	}
+	if (wsa_started) {
+		WSACleanup();
+		wsa_started = false;
+	}
 }/*}}}*/
 
 static SOCKET convey_tcp_connect(const std::string& host, const std::string& port, DWORD& err)
@@ -888,6 +902,8 @@ static bool convey_write_pipe(HANDLE h, char(&buf)[BUF_SIZE], DWORD* bytes, HAND
 int main(int argc, char** argv)
 {/*{{{*/
 
+	atexit(convey_final_cleanup);
+
 restart:
 	switch (convey_startup(argc, argv)) {
 		case convey_setup_ok:
@@ -1096,6 +1112,7 @@ restart:
 					std::cout << std::endl << "convey: ctrl-a q sent, exit" << std::endl;
 				}
 				convey_shutdown();
+				convey_final_cleanup();
 				ExitProcess(0);
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(128));
