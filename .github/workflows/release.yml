@@ -1,70 +1,39 @@
 name: Create Release
 
 on:
-  push:
-    tags:
-      - '*'
+  release:
+    types: [ published ]
 
 jobs:
-  release:
-    runs-on: windows-2022
-    steps:
-      - name: Create release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
-          draft: false
-          prerelease: false
-      - name: Output Release URL File
-        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
-      - name: Save Release URL File for publish
-        uses: actions/upload-artifact@v1
-        with:
-          name: release_url
-          path: release_url.txt
-
   publish:
-    needs: [ release ]
     strategy:
+      fail-fast: false
       matrix:
         arch: [x86, amd64, amd64_arm64]
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
-      - name: Load Release URL File from release job
-        uses: actions/download-artifact@v1
-        with:
-          name: release_url
       - name: Prepare environment vars
-        shell: powershell
+        shell: pwsh
         run: |
-          echo ("GITHUB_SHA_SHORT=" + $env:GITHUB_SHA.substring(0, 7)) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
-          $convey_version = [regex]::Match([IO.File]::ReadAllText("Makefile"), 'VERSION\s*=\s*(\S+)').captures.groups[1].value
-          echo ("CONVEY_VERSION=" + $convey_version) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
-          $target_arch = "${{ matrix.arch }}" -Replace ".*_"
-          echo ("TARGET_ARCH=" + $target_arch) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
-          echo ("RELEASE_ASSET_NAME=convey-" + $convey_version + "-" + $target_arch + ".zip") | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $upload_url = [IO.File]::ReadAllText("release_url/release_url.txt")
-          echo ("UPLOAD_URL=" + $upload_url) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Compile convey release tag
-        run: nmake
+          $tag = "${{ github.event.release.tag_name }}"
+          $target_arch = "${{ matrix.arch }}" -replace ".*_"
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CONVEY_VERSION=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TARGET_ARCH=$target_arch" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_ASSET_NAME=convey-$tag-$target_arch.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Compile convey
+        run: nmake VERSION=${{ env.CONVEY_VERSION }}
       - name: Package release build
-        run: |
-          7z a ${{ env.RELEASE_ASSET_NAME }} convey.exe convey.pdb LICENSE README.md
+        run: 7z a ${{ env.RELEASE_ASSET_NAME }} convey.exe convey.pdb LICENSE README.md
       - name: Upload release build
-        uses: actions/upload-release-asset@v1
+        shell: pwsh
+        run: gh release upload "${{ env.RELEASE_TAG }}" "${{ env.RELEASE_ASSET_NAME }}" --clobber
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ env.UPLOAD_URL }}
-          asset_path: ${{ env.RELEASE_ASSET_NAME }}
-          asset_name: ${{ env.RELEASE_ASSET_NAME }}
-          asset_content_type: application/zip
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
