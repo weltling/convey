@@ -846,8 +846,8 @@ static void convey_shutdown(void)
 		CLOSE_HANDLE(pipe);
 	}
 	CLOSE_HANDLE(bpipe);
-	CLOSE_HANDLE(in);
-	CLOSE_HANDLE(out);
+	/* in/out are the process standard handles; never close them, or a
+	 * redirected stdio pipe would break across a --reconnect restart. */
 	CLOSE_HANDLE(e_pipe_w);
 	CLOSE_HANDLE(e_pipe_r);
 	CLOSE_HANDLE(e_in);
