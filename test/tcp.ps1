@@ -117,9 +117,59 @@ function Test-Bridge {
     }
 }
 
+function Test-TcpClientReconnect {
+    # convey connects out with --reconnect; its stdin is an open, idle pipe.
+    # Without the stdin-wake fix a worker would block there and the reconnect
+    # would never happen, so this exercises patch #1 directly.
+    $port = Get-FreePort
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+    $listener.Start()
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $Convey
+    $psi.Arguments = "tcp:127.0.0.1:$port --reconnect --no-xterm"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        $stdout = $proc.StandardOutput.BaseStream
+
+        $t1 = $listener.AcceptTcpClientAsync()
+        if (-not $t1.Wait(3000)) { Assert-Equal 'accepted' 'timeout' 'reconnect: first connection'; return }
+        $c1 = $t1.Result
+        $s1 = $c1.GetStream()
+        $m1 = "first-conn"
+        $b1 = [System.Text.Encoding]::ASCII.GetBytes($m1)
+        $s1.Write($b1, 0, $b1.Length); $s1.Flush()
+        Start-Sleep -Milliseconds 300
+        Assert-Equal $m1 (Read-Text $stdout 256 3000) 'reconnect: first payload -> stdout'
+
+        # Drop the peer; convey must reconnect and accept a second connection.
+        $c1.Close()
+        $t2 = $listener.AcceptTcpClientAsync()
+        $ok = $t2.Wait(5000)
+        Assert-Equal $true $ok 'reconnect: second connection accepted'
+        if ($ok) {
+            $c2 = $t2.Result
+            $s2 = $c2.GetStream()
+            $m2 = "second-conn"
+            $b2 = [System.Text.Encoding]::ASCII.GetBytes($m2)
+            $s2.Write($b2, 0, $b2.Length); $s2.Flush()
+            Start-Sleep -Milliseconds 300
+            Assert-Equal $m2 (Read-Text $stdout 256 3000) 'reconnect: second payload -> stdout'
+            $c2.Close()
+        }
+    } finally {
+        if (-not $proc.HasExited) { $proc.Kill() }
+        $listener.Stop()
+    }
+}
+
 Write-Host "Testing $Convey"
 Test-TcpListenRoundTrip
 Test-Bridge
+Test-TcpClientReconnect
 
 if ($script:failures -gt 0) {
     Write-Host "$($script:failures) test(s) failed."
