@@ -66,6 +66,7 @@ static std::atomic<bool> shutting_down{false};
 static std::atomic<bool> ctrl_mode{false};
 static bool restart_on_exit = false;
 static SOCKET listen_sock{INVALID_SOCKET};
+static HANDLE stdin_thread{INVALID_HANDLE_VALUE};
 
 #define BUF_SIZE 4096
 
@@ -506,6 +507,21 @@ static void convey_bridge_fail(void)
 	}
 	if (INVALID_HANDLE_VALUE != bpipe) {
 		CancelIoEx(bpipe, nullptr);
+	}
+}/*}}}*/
+
+static void convey_console_fail(void)
+{/*{{{*/
+	is_error = true;
+	/* Unblock the stdin reader so the join and any reconnect proceed at once. */
+	if (INVALID_HANDLE_VALUE != stdin_thread) {
+		CancelSynchronousIo(stdin_thread);
+	}
+	if (INVALID_HANDLE_VALUE != in) {
+		CancelIoEx(in, nullptr);
+	}
+	if (INVALID_HANDLE_VALUE != pipe) {
+		CancelIoEx(pipe, nullptr);
 	}
 }/*}}}*/
 
@@ -973,8 +989,10 @@ restart:
 				er = GetLastError();
 			}
 			if (!rc) {
-				convey_error(er);
-				is_error = true;
+				if (!is_error) {
+					convey_error(er);
+				}
+				convey_console_fail();
 				return;
 			}
 
@@ -990,8 +1008,10 @@ restart:
 
 				rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
 				if (!rc) {
-					convey_error(er);
-					is_error = true;
+					if (!is_error) {
+						convey_error(er);
+					}
+					convey_console_fail();
 					return;
 				}
 			} else {
@@ -1000,6 +1020,8 @@ restart:
 		}
 		return;
 	});
+
+	stdin_thread = t0.native_handle();
 
 	std::thread t1([]() {
 		while (true) {
@@ -1013,13 +1035,15 @@ restart:
 
 			rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
 			if (!rc) {
-				convey_error(er);
-				is_error = true;
+				if (!is_error) {
+					convey_error(er);
+				}
+				convey_console_fail();
 				return;
 			}
 
 			if (convey_transport_is_tcp() && 0 == bytes) {
-				is_error = true;
+				convey_console_fail();
 				return;
 			}
 
@@ -1031,8 +1055,10 @@ restart:
 					er = GetLastError();
 				}
 				if (!rc) {
-					convey_error(er);
-					is_error = true;
+					if (!is_error) {
+						convey_error(er);
+					}
+					convey_console_fail();
 					return;
 				}
 			} else {
