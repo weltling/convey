@@ -586,7 +586,7 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 		struct addrinfo hints;
 		struct addrinfo *res = nullptr;
 		memset(&hints, 0, sizeof hints);
-		hints.ai_family = AF_INET;
+		hints.ai_family = AF_INET6;
 		hints.ai_socktype = SOCK_STREAM;
 		hints.ai_protocol = IPPROTO_TCP;
 		hints.ai_flags = AI_PASSIVE;
@@ -606,6 +606,10 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 
 		BOOL reuse = TRUE;
 		setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof reuse);
+
+		/* Accept both IPv6 and IPv4 (mapped) connections. */
+		DWORD v6only = 0;
+		setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char *>(&v6only), sizeof v6only);
 
 		if (0 != bind(listen_sock, res->ai_addr, static_cast<int>(res->ai_addrlen))) {
 			err = WSAGetLastError();
