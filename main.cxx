@@ -60,6 +60,7 @@ static bool is_console{false},
 static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 static std::atomic<bool> ctrl_mode{false};
+static bool restart_on_exit = false;
 
 #define BUF_SIZE 4096
 
@@ -280,6 +281,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	auto pipe_path_opt = op.add<popl::Value<std::string>>("d", "dev", "Path to the named pipe or COM device.");
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
 	auto no_xterm_opt = op.add<popl::Switch>("", "no-xterm", "Disable xterm support.");
+	auto reconnect_opt = op.add<popl::Switch>("", "reconnect", "Try to reconnect after connection loss.");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
 	auto version_opt = op.add<popl::Switch>("V", "version", "Output version information and exit.");
 
@@ -349,6 +351,10 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		}
 
 		conf.flow_control = convey_get_flow_control(flow_control_opt);
+
+		if (reconnect_opt->count() >= 1) {
+			restart_on_exit = true;
+		}
 	}
 	catch (const popl::invalid_option& e)
 	{
@@ -464,6 +470,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 	} while (true);
 	if (conn_error) {
 		convey_error(rc);
+		restart_on_exit = false;
 		return convey_setup_exit_err;
 	}
 	if (conf.verbose) {
@@ -614,6 +621,7 @@ static bool convey_write_pipe(HANDLE h, char(&buf)[BUF_SIZE], DWORD* bytes, HAND
 int main(int argc, char** argv)
 {/*{{{*/
 
+restart:
 	switch (convey_startup(argc, argv)) {
 		case convey_setup_ok:
 			// pass
@@ -734,6 +742,13 @@ int main(int argc, char** argv)
 	t2.join();
 
 	convey_shutdown();
+
+	if (restart_on_exit) {
+		is_error = false;
+		shutting_down = false;
+		ctrl_mode = false;
+		goto restart;
+	}
 
 	return 0;
 }/*}}}*/
