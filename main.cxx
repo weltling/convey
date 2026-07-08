@@ -889,12 +889,26 @@ static bool convey_read_pipe(HANDLE h, char (& buf)[BUF_SIZE], DWORD* bytes, HAN
 
 static bool convey_write_pipe(HANDLE h, char(&buf)[BUF_SIZE], DWORD* bytes, HANDLE e, DWORD& er)
 {
-	OVERLAPPED ov = OV_E(e);
-	bool rc = WriteFile(h, buf, *bytes, bytes, &ov);
-	er = GetLastError();
-	rc = convey_get_ov_result(h, &ov, bytes, rc, er);
+	DWORD total = *bytes, off = 0;
 
-	return rc;
+	while (off < total) {
+		OVERLAPPED ov = OV_E(e);
+		DWORD written = 0;
+		bool rc = WriteFile(h, buf + off, total - off, &written, &ov);
+		er = GetLastError();
+		rc = convey_get_ov_result(h, &ov, &written, rc, er);
+		if (!rc) {
+			*bytes = off;
+			return false;
+		}
+		if (0 == written) {
+			break;
+		}
+		off += written;
+	}
+
+	*bytes = off;
+	return true;
 }
 #undef OV_E
 /* }}} */
