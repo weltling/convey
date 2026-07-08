@@ -45,3 +45,6 @@ $(OBJ):
 clean:
 	del /f /q *.obj *.exe *.pdb *.ilk convey_gitver.tmp convey_gitver.mk
 
+test: all
+	powershell -NoProfile -ExecutionPolicy Bypass -File test\tcp.ps1 -Convey $(EXE_BASE_NAME).exe
+
