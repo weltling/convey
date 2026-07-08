@@ -72,13 +72,14 @@ Configure autologin for `ttyS0` or another terminal device you've chosen.
 
 Besides named pipes and COM ports, convey can also communicate over a TCP connection.
 
+## Client and server
+
 - Invoke `convey.exe tcp:<host>:<port>` to connect to a TCP server.
 - Invoke `convey.exe tcp-listen:<port>` to accept a single incoming connection.
 
 The `--poll` and `--reconnect` options work here too. `--poll` keeps retrying the connection on startup, `--reconnect` re-establishes it after a drop.
 
-
-# Windows kernel debugging with WinDbg over TCP
+## Windows kernel debugging with WinDbg
 
 This targets a Windows guest whose serial port is available on TCP, as done by QEMU, cloud-hypervisor and others. The bridge mode lets WinDbg reach such a serial-over-TCP target through a named pipe, without any third-party virtual COM driver. Convey creates the pipe server and pumps raw bytes between it and the TCP endpoint.
 
