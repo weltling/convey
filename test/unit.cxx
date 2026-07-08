@@ -81,6 +81,12 @@ int main()
 	EXPECT(convey_baud_is_valid(CBR_115200));
 	EXPECT(!convey_baud_is_valid(12345));
 
+	EXPECT(convey_trim_crlf("ab\r\n", 4) == 3);
+	EXPECT(convey_trim_crlf("ab\n", 3) == 3);
+	EXPECT(convey_trim_crlf("\r\n", 2) == 1);
+	EXPECT(convey_trim_crlf("", 0) == 0);
+	EXPECT(convey_trim_crlf("x", 1) == 1);
+
 	if (g_fail) {
 		std::cerr << g_fail << " unit test(s) failed." << std::endl;
 		return 1;
