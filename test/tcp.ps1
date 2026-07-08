@@ -81,6 +81,30 @@ function Test-TcpListenRoundTrip {
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
 
+function Test-TcpListenIPv6 {
+    # The listener is dual-stack, so an IPv6 client must be accepted too.
+    $port = Get-FreePort
+    $payload = "ipv6-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($inFile, $payload)
+
+    $p = Start-Process -FilePath $Convey -ArgumentList "tcp-listen:$port", "--no-xterm" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new([System.Net.Sockets.AddressFamily]::InterNetworkV6)
+        $client.Connect([System.Net.IPAddress]::IPv6Loopback, $port)
+        $stream = $client.GetStream()
+        Start-Sleep -Milliseconds 400
+        Assert-Equal $payload (Read-Text $stream 256 3000) 'tcp-listen: IPv6 client -> stdin -> socket'
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
+
 function Test-Bridge {
     $port = Get-FreePort
     $pipeName = "conveytest_" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -168,6 +192,7 @@ function Test-TcpClientReconnect {
 
 Write-Host "Testing $Convey"
 Test-TcpListenRoundTrip
+Test-TcpListenIPv6
 Test-Bridge
 Test-TcpClientReconnect
 
