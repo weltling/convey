@@ -118,6 +118,14 @@ static convey_transport_spec convey_parse_transport(const std::string& spec)
 	return r;
 }/*}}}*/
 
+static DWORD convey_trim_crlf(const char* buf, DWORD bytes)
+{/*{{{*/
+	if (bytes >= 2 && '\n' == buf[bytes - 1] && '\r' == buf[bytes - 2]) {
+		return bytes - 1;
+	}
+	return bytes;
+}/*}}}*/
+
 struct convey_conf {
 	bool verbose;
 	bool no_xterm;
@@ -1082,11 +1090,7 @@ restart:
 			/* Do not send bytes typed in the ctrl mode. */
 			if (bytes && !ctrl_mode) {
 				if (conf.no_xterm) {
-					// Cut out CRLF.
-					// TODO parametrize this, if needed
-					if (bytes >= 2 && '\n' == buf[bytes - 1] && '\r' == buf[bytes - 2]) {
-						bytes -= 1;
-					}
+					bytes = convey_trim_crlf(buf, bytes);
 				}
 
 				rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
