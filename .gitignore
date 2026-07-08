@@ -5,3 +5,5 @@
 *.ilk
 .vs
 config.h
+convey_gitver.tmp
+convey_gitver.mk

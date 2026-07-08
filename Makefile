@@ -1,5 +1,13 @@
 
+# The version defaults to `git describe`; override with `nmake VERSION=x`.
+# Falls back to the literal below when git is unavailable (e.g. tarballs).
 VERSION=0.4.1
+!IF [git describe --tags --always --dirty 2> NUL > convey_gitver.tmp] == 0
+!	IF [for /f "usebackq delims=" %v in (convey_gitver.tmp) do @echo VERSION=%v> convey_gitver.mk] == 0
+!		INCLUDE convey_gitver.mk
+!	ENDIF
+!ENDIF
+
 
 !if "$(CXX)" == ""
 CXX=cl.exe
@@ -35,5 +43,5 @@ $(OBJ):
 	"$(CXX)" $(CXXFLAGS) /c $(SRC)
 
 clean:
-	del /f /q *.obj *.exe *.pdb *.ilk
+	del /f /q *.obj *.exe *.pdb *.ilk convey_gitver.tmp convey_gitver.mk
 
