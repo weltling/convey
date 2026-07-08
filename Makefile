@@ -48,3 +48,8 @@ clean:
 test: all
 	powershell -NoProfile -ExecutionPolicy Bypass -File test\tcp.ps1 -Convey $(EXE_BASE_NAME).exe
 
+unit:
+	@echo #define VERSION "$(VERSION)" > config.h
+	"$(CXX)" $(CXXFLAGS) /Fe:convey_unit.exe test\unit.cxx $(LIBS)
+	convey_unit.exe
+
