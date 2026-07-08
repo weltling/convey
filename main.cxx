@@ -916,7 +916,7 @@ restart:
 
 				bool rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
 				if (!rc || (convey_transport_is_tcp() && 0 == bytes)) {
-					if (!rc) {
+					if (!rc && !is_error) {
 						convey_error(er);
 					}
 					convey_bridge_fail();
@@ -926,7 +926,9 @@ restart:
 				if (bytes) {
 					rc = convey_write_pipe(bpipe, buf, &bytes, e_out, er);
 					if (!rc) {
-						convey_error(er);
+						if (!is_error) {
+							convey_error(er);
+						}
 						convey_bridge_fail();
 						return;
 					}
@@ -945,7 +947,9 @@ restart:
 
 				bool rc = convey_read_pipe(bpipe, buf, &bytes, e_in, er);
 				if (!rc) {
-					convey_error(er);
+					if (!is_error) {
+						convey_error(er);
+					}
 					convey_bridge_fail();
 					return;
 				}
@@ -953,7 +957,9 @@ restart:
 				if (bytes) {
 					rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
 					if (!rc) {
-						convey_error(er);
+						if (!is_error) {
+							convey_error(er);
+						}
 						convey_bridge_fail();
 						return;
 					}
