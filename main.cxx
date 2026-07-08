@@ -28,11 +28,14 @@
  */
 
 /* {{{ Includes */
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <conio.h>
 #include <fcntl.h>
 #include <io.h>
 
+#include <cstring>
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -44,6 +47,7 @@
 
 /* {{{ Global decls */
 static HANDLE pipe{INVALID_HANDLE_VALUE},
+			bpipe{INVALID_HANDLE_VALUE},
 			in{INVALID_HANDLE_VALUE},
 			out{INVALID_HANDLE_VALUE},
 			e_pipe_w{INVALID_HANDLE_VALUE},
@@ -61,6 +65,7 @@ static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 static std::atomic<bool> ctrl_mode{false};
 static bool restart_on_exit = false;
+static SOCKET listen_sock{INVALID_SOCKET};
 
 #define BUF_SIZE 4096
 
@@ -69,6 +74,13 @@ enum convey_flow_control {
 	convey_flow_control_xonxoff,
 	convey_flow_control_rtscts,
 	convey_flow_control_dsrdtr
+};
+
+enum convey_transport {
+	convey_tp_pipe,
+	convey_tp_serial,
+	convey_tp_tcp_client,
+	convey_tp_tcp_server
 };
 
 struct convey_conf {
@@ -81,6 +93,11 @@ struct convey_conf {
 	uint8_t stop_bits;
 	uint8_t byte_size;
 	convey_flow_control flow_control;
+	convey_transport transport;
+	std::string tcp_host;
+	std::string tcp_port;
+	bool bridge;
+	std::string bridge_pipe_name;
 };
 
 static convey_conf conf{0};
@@ -263,8 +280,11 @@ static void convey_usage_print(popl::OptionParser& op)
 {/*{{{*/
 	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
 	std::cerr << "       convey [options] \\\\.\\COM<num>" << std::endl;
+	std::cerr << "       convey [options] tcp:<host>:<port>" << std::endl;
+	std::cerr << "       convey [options] tcp-listen:<port>" << std::endl;
+	std::cerr << "       convey --bridge --pipe-server \\\\.\\pipe\\<name> tcp:<host>:<port>" << std::endl;
 	std::cerr << std::endl;
-	std::cerr << "IPC through a named pipe or a serial port." << std::endl;
+	std::cerr << "IPC through a named pipe, a serial port or a TCP endpoint." << std::endl;
 	std::cerr << std::endl;
 	std::cout << op << std::endl;
 }/*}}}*/
@@ -282,6 +302,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
 	auto no_xterm_opt = op.add<popl::Switch>("", "no-xterm", "Disable xterm support.");
 	auto reconnect_opt = op.add<popl::Switch>("", "reconnect", "Try to reconnect after connection loss.");
+	auto bridge_opt = op.add<popl::Switch>("", "bridge", "Bridge mode: pump raw bytes between a pipe server and the endpoint.");
+	auto pipe_server_opt = op.add<popl::Value<std::string>>("", "pipe-server", "Create a named pipe server with this name (bridge mode).");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
 	auto version_opt = op.add<popl::Switch>("V", "version", "Output version information and exit.");
 
@@ -321,6 +343,31 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 			return convey_setup_exit_err;
 		}
 
+		conf.transport = convey_tp_pipe;
+		{
+			const std::string& p = conf.pipe_path;
+			const std::string tcp_pfx = "tcp:";
+			const std::string tcpl_pfx = "tcp-listen:";
+			if (0 == p.compare(0, tcpl_pfx.size(), tcpl_pfx)) {
+				conf.tcp_port = p.substr(tcpl_pfx.size());
+				if (conf.tcp_port.empty()) {
+					std::cerr << argv[0] << ": invalid listen endpoint '" << p << "', expected tcp-listen:PORT" << std::endl;
+					return convey_setup_exit_err;
+				}
+				conf.transport = convey_tp_tcp_server;
+			} else if (0 == p.compare(0, tcp_pfx.size(), tcp_pfx)) {
+				std::string hp = p.substr(tcp_pfx.size());
+				auto pos = hp.rfind(':');
+				if (std::string::npos == pos || 0 == pos || pos + 1 == hp.size()) {
+					std::cerr << argv[0] << ": invalid tcp endpoint '" << p << "', expected tcp:HOST:PORT" << std::endl;
+					return convey_setup_exit_err;
+				}
+				conf.tcp_host = hp.substr(0, pos);
+				conf.tcp_port = hp.substr(pos + 1);
+				conf.transport = convey_tp_tcp_client;
+			}
+		}
+
 		if (pipe_poll_unavail_opt->is_set()) {
 			conf.pipe_poll = pipe_poll_unavail_opt->value();
 		}
@@ -353,6 +400,16 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		conf.flow_control = convey_get_flow_control(flow_control_opt);
 
 		if (reconnect_opt->count() >= 1) {
+			restart_on_exit = true;
+		}
+
+		if (bridge_opt->count() >= 1) {
+			conf.bridge = true;
+			if (!pipe_server_opt->is_set()) {
+				std::cerr << argv[0] << ": --bridge requires --pipe-server <name>" << std::endl;
+				return convey_setup_exit_err;
+			}
+			conf.bridge_pipe_name = pipe_server_opt->value();
 			restart_on_exit = true;
 		}
 	}
@@ -436,6 +493,133 @@ static void setup_console(void)
 	}
 }/*}}}*/
 
+static bool convey_transport_is_tcp(void)
+{/*{{{*/
+	return convey_tp_tcp_client == conf.transport || convey_tp_tcp_server == conf.transport;
+}/*}}}*/
+
+static void convey_bridge_fail(void)
+{/*{{{*/
+	is_error = true;
+	if (INVALID_HANDLE_VALUE != pipe) {
+		CancelIoEx(pipe, nullptr);
+	}
+	if (INVALID_HANDLE_VALUE != bpipe) {
+		CancelIoEx(bpipe, nullptr);
+	}
+}/*}}}*/
+
+static bool convey_wsa_init(void)
+{/*{{{*/
+	static bool started = false;
+	if (started) {
+		return true;
+	}
+	WSADATA wsa;
+	int r = WSAStartup(MAKEWORD(2, 2), &wsa);
+	if (0 != r) {
+		std::cerr << "convey: WSAStartup failed with " << r << std::endl;
+		return false;
+	}
+	started = true;
+	return true;
+}/*}}}*/
+
+static SOCKET convey_tcp_connect(const std::string& host, const std::string& port, DWORD& err)
+{/*{{{*/
+	struct addrinfo hints;
+	struct addrinfo *res = nullptr;
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+
+	int gai = getaddrinfo(host.c_str(), port.c_str(), &hints, &res);
+	if (0 != gai) {
+		err = static_cast<DWORD>(gai);
+		return INVALID_SOCKET;
+	}
+
+	SOCKET s = INVALID_SOCKET;
+	for (struct addrinfo *ai = res; nullptr != ai; ai = ai->ai_next) {
+		s = WSASocketW(ai->ai_family, ai->ai_socktype, ai->ai_protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
+		if (INVALID_SOCKET == s) {
+			err = WSAGetLastError();
+			continue;
+		}
+		if (0 == connect(s, ai->ai_addr, static_cast<int>(ai->ai_addrlen))) {
+			break;
+		}
+		err = WSAGetLastError();
+		closesocket(s);
+		s = INVALID_SOCKET;
+	}
+	freeaddrinfo(res);
+
+	if (INVALID_SOCKET != s) {
+		BOOL nodelay = TRUE;
+		setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof nodelay);
+	}
+
+	return s;
+}/*}}}*/
+
+static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
+{/*{{{*/
+	if (INVALID_SOCKET == listen_sock) {
+		struct addrinfo hints;
+		struct addrinfo *res = nullptr;
+		memset(&hints, 0, sizeof hints);
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+		hints.ai_flags = AI_PASSIVE;
+
+		int gai = getaddrinfo(nullptr, port.c_str(), &hints, &res);
+		if (0 != gai) {
+			err = static_cast<DWORD>(gai);
+			return INVALID_SOCKET;
+		}
+
+		listen_sock = WSASocketW(res->ai_family, res->ai_socktype, res->ai_protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
+		if (INVALID_SOCKET == listen_sock) {
+			err = WSAGetLastError();
+			freeaddrinfo(res);
+			return INVALID_SOCKET;
+		}
+
+		BOOL reuse = TRUE;
+		setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof reuse);
+
+		if (0 != bind(listen_sock, res->ai_addr, static_cast<int>(res->ai_addrlen))) {
+			err = WSAGetLastError();
+			freeaddrinfo(res);
+			closesocket(listen_sock);
+			listen_sock = INVALID_SOCKET;
+			return INVALID_SOCKET;
+		}
+		freeaddrinfo(res);
+
+		if (0 != listen(listen_sock, 1)) {
+			err = WSAGetLastError();
+			closesocket(listen_sock);
+			listen_sock = INVALID_SOCKET;
+			return INVALID_SOCKET;
+		}
+	}
+
+	SOCKET s = accept(listen_sock, nullptr, nullptr);
+	if (INVALID_SOCKET == s) {
+		err = WSAGetLastError();
+		return INVALID_SOCKET;
+	}
+
+	BOOL nodelay = TRUE;
+	setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof nodelay);
+
+	return s;
+}/*}}}*/
+
 static convey_setup_status convey_startup(int argc, char **argv)
 {/*{{{*/
 	DWORD rc;
@@ -449,6 +633,13 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		return _rc;
 	}
 
+	if (convey_transport_is_tcp()) {
+		if (!convey_wsa_init()) {
+			restart_on_exit = false;
+			return convey_setup_exit_err;
+		}
+	}
+
 	if (conf.verbose) {
 		std::cout << "Polling the pipe '" << conf.pipe_path << "' for " << conf.pipe_poll << " seconds" << std::endl;
 	}
@@ -456,9 +647,19 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		   step = 300 /* milliseconds*/;
 	bool conn_error;
 	do {
-		pipe = CreateFile(conf.pipe_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
-		rc = GetLastError();
-		conn_error = INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc || ERROR_FILE_NOT_FOUND == rc;
+		if (convey_tp_tcp_client == conf.transport) {
+			SOCKET s = convey_tcp_connect(conf.tcp_host, conf.tcp_port, rc);
+			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
+			conn_error = INVALID_HANDLE_VALUE == pipe;
+		} else if (convey_tp_tcp_server == conf.transport) {
+			SOCKET s = convey_tcp_accept(conf.tcp_port, rc);
+			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
+			conn_error = INVALID_HANDLE_VALUE == pipe;
+		} else {
+			pipe = CreateFile(conf.pipe_path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+			rc = GetLastError();
+			conn_error = INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc || ERROR_FILE_NOT_FOUND == rc;
+		}
 		if (conn_error) {
 			if (elapsed/1000 < conf.pipe_poll) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(step));
@@ -535,33 +736,71 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		}
 	}
 
-	/* This could be something else, too. */
-	in = GetStdHandle(STD_INPUT_HANDLE);
-	if (INVALID_HANDLE_VALUE == in) {
-		convey_error();
-		convey_shutdown();
-		return convey_setup_exit_err;
-	}
-	in_is_pipe = GetFileType(in) == FILE_TYPE_PIPE;
+	if (conf.bridge) {
+		bpipe = CreateNamedPipe(conf.bridge_pipe_name.c_str(),
+			PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+			PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+			1, BUF_SIZE, BUF_SIZE, 0, nullptr);
+		if (INVALID_HANDLE_VALUE == bpipe) {
+			convey_error();
+			convey_shutdown();
+			return convey_setup_exit_err;
+		}
 
-	/* This could be something else, too. */
-	out = GetStdHandle(STD_OUTPUT_HANDLE);
-	if (INVALID_HANDLE_VALUE == out) {
-		convey_error();
-		convey_shutdown();
-		return convey_setup_exit_err;
+		if (conf.verbose) {
+			std::cout << "Waiting for a client on '" << conf.bridge_pipe_name << "'" << std::endl;
+		}
+
+		OVERLAPPED ov;
+		memset(&ov, 0, sizeof ov);
+		ov.hEvent = CreateEvent(nullptr, true, false, nullptr);
+		BOOL connected = ConnectNamedPipe(bpipe, &ov);
+		DWORD cer = GetLastError();
+		if (!connected) {
+			if (ERROR_IO_PENDING == cer) {
+				WaitForSingleObject(ov.hEvent, INFINITE);
+				connected = TRUE;
+			} else if (ERROR_PIPE_CONNECTED == cer) {
+				connected = TRUE;
+			}
+		}
+		CloseHandle(ov.hEvent);
+		if (!connected) {
+			convey_error(cer);
+			convey_shutdown();
+			return convey_setup_exit_err;
+		}
+	} else {
+		/* This could be something else, too. */
+		in = GetStdHandle(STD_INPUT_HANDLE);
+		if (INVALID_HANDLE_VALUE == in) {
+			convey_error();
+			convey_shutdown();
+			return convey_setup_exit_err;
+		}
+		in_is_pipe = GetFileType(in) == FILE_TYPE_PIPE;
+
+		/* This could be something else, too. */
+		out = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (INVALID_HANDLE_VALUE == out) {
+			convey_error();
+			convey_shutdown();
+			return convey_setup_exit_err;
+		}
+		out_is_pipe = GetFileType(out) == FILE_TYPE_PIPE;
 	}
-	out_is_pipe = GetFileType(out) == FILE_TYPE_PIPE;
 
 	e_pipe_w = CreateEvent(nullptr, false, false, nullptr);
 	e_pipe_r = CreateEvent(nullptr, false, false, nullptr);
 	e_in = CreateEvent(nullptr, false, false, nullptr);
 	e_out = CreateEvent(nullptr, false, false, nullptr);
 
-	is_console = is_console_handle(in) && is_console_handle(out);
+	if (!conf.bridge) {
+		is_console = is_console_handle(in) && is_console_handle(out);
 
-	if (is_console) {
-		setup_console();
+		if (is_console) {
+			setup_console();
+		}
 	}
 
 	return convey_setup_ok;
@@ -582,7 +821,15 @@ static void convey_shutdown(void)
 		restore_console();
 	}
 
-	CLOSE_HANDLE(pipe);
+	if (convey_tp_tcp_client == conf.transport || convey_tp_tcp_server == conf.transport) {
+		if (INVALID_HANDLE_VALUE != pipe) {
+			closesocket(reinterpret_cast<SOCKET>(pipe));
+			pipe = INVALID_HANDLE_VALUE;
+		}
+	} else {
+		CLOSE_HANDLE(pipe);
+	}
+	CLOSE_HANDLE(bpipe);
 	CLOSE_HANDLE(in);
 	CLOSE_HANDLE(out);
 	CLOSE_HANDLE(e_pipe_w);
@@ -630,6 +877,83 @@ restart:
 			return 1;
 		case convey_setup_exit_ok:
 			return 0;
+	}
+
+	if (conf.bridge) {
+		if (conf.verbose) {
+			std::cout << "Bridging '" << conf.bridge_pipe_name << "' <-> '"
+				<< conf.pipe_path << "'" << std::endl;
+		}
+
+		std::thread b0([]() {
+			while (true) {
+				if (is_error || shutting_down) {
+					return;
+				}
+
+				char buf[BUF_SIZE];
+				DWORD bytes{0}, er{0};
+
+				bool rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
+				if (!rc || (convey_transport_is_tcp() && 0 == bytes)) {
+					if (!rc) {
+						convey_error(er);
+					}
+					convey_bridge_fail();
+					return;
+				}
+
+				if (bytes) {
+					rc = convey_write_pipe(bpipe, buf, &bytes, e_out, er);
+					if (!rc) {
+						convey_error(er);
+						convey_bridge_fail();
+						return;
+					}
+				}
+			}
+		});
+
+		std::thread b1([]() {
+			while (true) {
+				if (is_error || shutting_down) {
+					return;
+				}
+
+				char buf[BUF_SIZE];
+				DWORD bytes{0}, er{0};
+
+				bool rc = convey_read_pipe(bpipe, buf, &bytes, e_in, er);
+				if (!rc) {
+					convey_error(er);
+					convey_bridge_fail();
+					return;
+				}
+
+				if (bytes) {
+					rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
+					if (!rc) {
+						convey_error(er);
+						convey_bridge_fail();
+						return;
+					}
+				}
+			}
+		});
+
+		b0.join();
+		b1.join();
+
+		convey_shutdown();
+
+		if (restart_on_exit) {
+			is_error = false;
+			shutting_down = false;
+			ctrl_mode = false;
+			goto restart;
+		}
+
+		return 0;
 	}
 
 	std::thread t0([]() {
@@ -690,6 +1014,11 @@ restart:
 			rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
 			if (!rc) {
 				convey_error(er);
+				is_error = true;
+				return;
+			}
+
+			if (convey_transport_is_tcp() && 0 == bytes) {
 				is_error = true;
 				return;
 			}

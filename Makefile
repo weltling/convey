@@ -22,7 +22,7 @@ CXXFLAGS=$(CXXFLAGS) /MTd /Od /DEBUG /D_DEBUG
 LDFLAGS=$(LDFLAGS) /DEBUG
 !endif
 
-LIBS=user32.lib
+LIBS=user32.lib ws2_32.lib
 
 OBJ=main.obj
 SRC=main.cxx
