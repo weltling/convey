@@ -29,7 +29,7 @@ jobs:
           echo ("TARGET_ARCH=" + $target_arch) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append 
       - name: Compile convey
         run: nmake
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: convey-${{ env.CONVEY_VERSION }}-${{ env.TARGET_ARCH }}-${{ env.GITHUB_SHA_SHORT }}
           path: |
