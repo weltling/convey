@@ -85,6 +85,39 @@ enum convey_transport {
 	convey_tp_tcp_server
 };
 
+struct convey_transport_spec {
+	convey_transport kind;
+	std::string host;
+	std::string port;
+	bool ok;
+};
+
+static convey_transport_spec convey_parse_transport(const std::string& spec)
+{/*{{{*/
+	convey_transport_spec r{convey_tp_pipe, "", "", true};
+
+	const std::string tcp_pfx = "tcp:";
+	const std::string tcpl_pfx = "tcp-listen:";
+
+	if (0 == spec.compare(0, tcpl_pfx.size(), tcpl_pfx)) {
+		r.kind = convey_tp_tcp_server;
+		r.port = spec.substr(tcpl_pfx.size());
+		r.ok = !r.port.empty();
+	} else if (0 == spec.compare(0, tcp_pfx.size(), tcp_pfx)) {
+		r.kind = convey_tp_tcp_client;
+		std::string hp = spec.substr(tcp_pfx.size());
+		auto pos = hp.rfind(':');
+		if (std::string::npos == pos || 0 == pos || pos + 1 == hp.size()) {
+			r.ok = false;
+		} else {
+			r.host = hp.substr(0, pos);
+			r.port = hp.substr(pos + 1);
+		}
+	}
+
+	return r;
+}/*}}}*/
+
 struct convey_conf {
 	bool verbose;
 	bool no_xterm;
@@ -345,30 +378,18 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 			return convey_setup_exit_err;
 		}
 
-		conf.transport = convey_tp_pipe;
-		{
-			const std::string& p = conf.pipe_path;
-			const std::string tcp_pfx = "tcp:";
-			const std::string tcpl_pfx = "tcp-listen:";
-			if (0 == p.compare(0, tcpl_pfx.size(), tcpl_pfx)) {
-				conf.tcp_port = p.substr(tcpl_pfx.size());
-				if (conf.tcp_port.empty()) {
-					std::cerr << argv[0] << ": invalid listen endpoint '" << p << "', expected tcp-listen:PORT" << std::endl;
-					return convey_setup_exit_err;
-				}
-				conf.transport = convey_tp_tcp_server;
-			} else if (0 == p.compare(0, tcp_pfx.size(), tcp_pfx)) {
-				std::string hp = p.substr(tcp_pfx.size());
-				auto pos = hp.rfind(':');
-				if (std::string::npos == pos || 0 == pos || pos + 1 == hp.size()) {
-					std::cerr << argv[0] << ": invalid tcp endpoint '" << p << "', expected tcp:HOST:PORT" << std::endl;
-					return convey_setup_exit_err;
-				}
-				conf.tcp_host = hp.substr(0, pos);
-				conf.tcp_port = hp.substr(pos + 1);
-				conf.transport = convey_tp_tcp_client;
+		convey_transport_spec ts = convey_parse_transport(conf.pipe_path);
+		if (!ts.ok) {
+			if (convey_tp_tcp_server == ts.kind) {
+				std::cerr << argv[0] << ": invalid listen endpoint '" << conf.pipe_path << "', expected tcp-listen:PORT" << std::endl;
+			} else {
+				std::cerr << argv[0] << ": invalid tcp endpoint '" << conf.pipe_path << "', expected tcp:HOST:PORT" << std::endl;
 			}
+			return convey_setup_exit_err;
 		}
+		conf.transport = ts.kind;
+		conf.tcp_host = ts.host;
+		conf.tcp_port = ts.port;
 
 		if (pipe_poll_unavail_opt->is_set()) {
 			conf.pipe_poll = pipe_poll_unavail_opt->value();
@@ -913,6 +934,7 @@ static bool convey_write_pipe(HANDLE h, char(&buf)[BUF_SIZE], DWORD* bytes, HAND
 #undef OV_E
 /* }}} */
 
+#ifndef CONVEY_UNIT_TEST
 int main(int argc, char** argv)
 {/*{{{*/
 
@@ -1148,4 +1170,5 @@ restart:
 
 	return 0;
 }/*}}}*/
+#endif
 
