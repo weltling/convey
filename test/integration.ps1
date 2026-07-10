@@ -1,5 +1,5 @@
 #Requires -Version 5
-# Integration tests for convey's TCP transport and bridge mode.
+# Integration tests for convey.
 # Drives the real convey.exe over loopback and checks byte round-trips.
 [CmdletBinding()]
 param(

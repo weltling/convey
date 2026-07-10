@@ -35,7 +35,7 @@ jobs:
       - name: Run integration tests
         if: matrix.arch == 'amd64'
         shell: pwsh
-        run: ./test/tcp.ps1 -Convey ./convey.exe
+        run: ./test/integration.ps1 -Convey ./convey.exe
       - uses: actions/upload-artifact@v4
         with:
           name: convey-${{ env.CONVEY_VERSION }}-${{ env.TARGET_ARCH }}-${{ env.GITHUB_SHA_SHORT }}

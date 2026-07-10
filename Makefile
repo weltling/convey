@@ -46,7 +46,7 @@ clean:
 	del /f /q *.obj *.exe *.pdb *.ilk convey_gitver.tmp convey_gitver.mk
 
 test: all
-	powershell -NoProfile -ExecutionPolicy Bypass -File test\tcp.ps1 -Convey $(EXE_BASE_NAME).exe
+	powershell -NoProfile -ExecutionPolicy Bypass -File test\integration.ps1 -Convey $(EXE_BASE_NAME).exe
 
 unit:
 	@echo #define VERSION "$(VERSION)" > config.h
