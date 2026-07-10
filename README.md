@@ -89,6 +89,18 @@ This targets a Windows guest whose serial port is available on TCP, as done by Q
 The bridge carries raw bytes only, so there's no console, no CRLF trimming and no xterm handling. It reconnects on its own, which lets it survive target resets.
 
 
+# Logging
+
+Convey can log the session to a file, for example to keep a boot or panic log that would otherwise scroll away. `--log` captures the full session; the received stream already includes what you type on an echoing console, but a non-echoing target (or a one-way stream) needs the sent stream too.
+
+- `--log <file>` logs the full session into one file, each block marked `>` (sent) or `<` (received).
+- `--log-recv <file>` logs only the received stream (target to host).
+- `--log-send <file>` logs only the sent stream (host to target).
+- `--log-append` appends to the log files instead of overwriting them.
+
+The log options may be combined to write several files at once (for example a marked session plus a raw received dump), but each must name a different file. `--log-append` applies to all of them. For example, `convey.exe --log session.log \\.\pipe\<pipe name>`. The logs stay open across `--reconnect` so they are not truncated on every reconnect.
+
+
 # Debugging Linux kernel
 
 ## Prerequisities
