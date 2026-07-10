@@ -159,7 +159,10 @@ static void convey_error(DWORD c = -1)
 	char *buf{nullptr};
 	DWORD err_code = (-1 == c) ? GetLastError() : c;
 
-	if (ERROR_BROKEN_PIPE == c && !conf.verbose) {
+	if (!conf.verbose && (ERROR_BROKEN_PIPE == err_code
+			|| ERROR_NETNAME_DELETED == err_code
+			|| ERROR_CONNECTION_ABORTED == err_code
+			|| ERROR_OPERATION_ABORTED == err_code)) {
 		return;
 	}
 
@@ -169,7 +172,7 @@ static void convey_error(DWORD c = -1)
 	);
 
 	if (ret) {
-		std::cout << "convey: 0x" << std::hex << c << ": " << buf << std::endl;
+		std::cerr << "convey: 0x" << std::hex << err_code << ": " << buf << std::endl;
 
 		LocalFree(buf);
 	}
