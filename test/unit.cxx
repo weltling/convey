@@ -87,6 +87,23 @@ int main()
 	EXPECT(convey_trim_crlf("", 0) == 0);
 	EXPECT(convey_trim_crlf("x", 1) == 1);
 
+	{
+		char rec[16];
+		DWORD n = convey_log_session_record(rec, "hi", 2, true);
+		EXPECT(n == 4);
+		EXPECT(rec[0] == '>');
+		EXPECT(rec[1] == ' ');
+		EXPECT(rec[2] == 'h');
+		EXPECT(rec[3] == 'i');
+	}
+	{
+		char rec[16];
+		DWORD n = convey_log_session_record(rec, "x", 1, false);
+		EXPECT(n == 3);
+		EXPECT(rec[0] == '<');
+		EXPECT(rec[2] == 'x');
+	}
+
 	if (g_fail) {
 		std::cerr << g_fail << " unit test(s) failed." << std::endl;
 		return 1;

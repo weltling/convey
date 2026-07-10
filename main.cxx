@@ -68,6 +68,9 @@ static std::atomic<bool> ctrl_mode{false};
 static bool restart_on_exit = false;
 static SOCKET listen_sock{INVALID_SOCKET};
 static HANDLE stdin_thread{INVALID_HANDLE_VALUE};
+static HANDLE log_handle{INVALID_HANDLE_VALUE};
+static HANDLE log_recv_handle{INVALID_HANDLE_VALUE};
+static HANDLE log_send_handle{INVALID_HANDLE_VALUE};
 
 #define BUF_SIZE 4096
 
@@ -141,6 +144,10 @@ struct convey_conf {
 	std::string tcp_port;
 	bool bridge;
 	std::string bridge_pipe_name;
+	std::string log_path;
+	std::string log_recv_path;
+	std::string log_send_path;
+	bool log_append;
 };
 
 static convey_conf conf{0};
@@ -371,6 +378,10 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	auto reconnect_opt = op.add<popl::Switch>("", "reconnect", "Try to reconnect after connection loss.");
 	auto bridge_opt = op.add<popl::Switch>("", "bridge", "Bridge mode: pump raw bytes between a pipe server and the endpoint.");
 	auto pipe_server_opt = op.add<popl::Value<std::string>>("", "pipe-server", "Create a named pipe server with this name (bridge mode).");
+	auto log_opt = op.add<popl::Value<std::string>>("", "log", "Log the full session to a file, each block marked > (sent) or < (received).");
+	auto log_recv_opt = op.add<popl::Value<std::string>>("", "log-recv", "Log only the received stream to a file.");
+	auto log_send_opt = op.add<popl::Value<std::string>>("", "log-send", "Log only the sent stream to a file.");
+	auto log_append_opt = op.add<popl::Switch>("", "log-append", "Append to the log files instead of overwriting them.");
 	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
 	auto version_opt = op.add<popl::Switch>("V", "version", "Output version information and exit.");
 
@@ -466,6 +477,33 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 			}
 			conf.bridge_pipe_name = pipe_server_opt->value();
 			restart_on_exit = true;
+		}
+
+		if (log_opt->is_set()) {
+			conf.log_path = log_opt->value();
+		}
+		if (log_recv_opt->is_set()) {
+			conf.log_recv_path = log_recv_opt->value();
+		}
+		if (log_send_opt->is_set()) {
+			conf.log_send_path = log_send_opt->value();
+		}
+		if (log_append_opt->count() >= 1) {
+			conf.log_append = true;
+		}
+
+		// The log options write to independent files and may be combined,
+		// but two of them must not name the same file: the handles do not
+		// share write access, and mixing raw and marked output would
+		// corrupt the file.
+		const std::string* log_paths[] = { &conf.log_path, &conf.log_recv_path, &conf.log_send_path };
+		for (size_t i = 0; i < 3; ++i) {
+			for (size_t j = i + 1; j < 3; ++j) {
+				if (!log_paths[i]->empty() && 0 == lstrcmpiA(log_paths[i]->c_str(), log_paths[j]->c_str())) {
+					std::cerr << argv[0] << ": the log options must each use a different file" << std::endl;
+					return convey_setup_exit_err;
+				}
+			}
 		}
 	}
 	catch (const popl::invalid_option& e)
@@ -598,6 +636,18 @@ static bool convey_wsa_init(void)
 
 static void convey_final_cleanup(void)
 {/*{{{*/
+	if (INVALID_HANDLE_VALUE != log_handle) {
+		CloseHandle(log_handle);
+		log_handle = INVALID_HANDLE_VALUE;
+	}
+	if (INVALID_HANDLE_VALUE != log_recv_handle) {
+		CloseHandle(log_recv_handle);
+		log_recv_handle = INVALID_HANDLE_VALUE;
+	}
+	if (INVALID_HANDLE_VALUE != log_send_handle) {
+		CloseHandle(log_send_handle);
+		log_send_handle = INVALID_HANDLE_VALUE;
+	}
 	if (INVALID_SOCKET != listen_sock) {
 		closesocket(listen_sock);
 		listen_sock = INVALID_SOCKET;
@@ -606,6 +656,50 @@ static void convey_final_cleanup(void)
 		WSACleanup();
 		wsa_started = false;
 	}
+}/*}}}*/
+
+static void convey_log_to(HANDLE h, const char* buf, DWORD bytes)
+{/*{{{*/
+	if (INVALID_HANDLE_VALUE != h && bytes) {
+		DWORD written = 0;
+		WriteFile(h, buf, bytes, &written, nullptr);
+	}
+}/*}}}*/
+
+static DWORD convey_log_session_record(char* out, const char* buf, DWORD bytes, bool sent)
+{/*{{{*/
+	out[0] = sent ? '>' : '<';
+	out[1] = ' ';
+	memcpy(out + 2, buf, bytes);
+	return bytes + 2;
+}/*}}}*/
+
+static void convey_log_recv(const char* buf, DWORD bytes)
+{/*{{{*/
+	convey_log_to(log_recv_handle, buf, bytes);
+	if (INVALID_HANDLE_VALUE != log_handle && bytes) {
+		char rec[BUF_SIZE + 2];
+		convey_log_to(log_handle, rec, convey_log_session_record(rec, buf, bytes, false));
+	}
+}/*}}}*/
+
+static void convey_log_sent(const char* buf, DWORD bytes)
+{/*{{{*/
+	convey_log_to(log_send_handle, buf, bytes);
+	if (INVALID_HANDLE_VALUE != log_handle && bytes) {
+		char rec[BUF_SIZE + 2];
+		convey_log_to(log_handle, rec, convey_log_session_record(rec, buf, bytes, true));
+	}
+}/*}}}*/
+
+static bool convey_open_log(const std::string& path, HANDLE& h)
+{/*{{{*/
+	if (path.empty() || INVALID_HANDLE_VALUE != h) {
+		return true;
+	}
+	DWORD disp = conf.log_append ? OPEN_ALWAYS : CREATE_ALWAYS;
+	h = CreateFile(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, disp, FILE_ATTRIBUTE_NORMAL, nullptr);
+	return INVALID_HANDLE_VALUE != h;
 }/*}}}*/
 
 static SOCKET convey_tcp_connect(const std::string& host, const std::string& port, DWORD& err)
@@ -882,6 +976,14 @@ static convey_setup_status convey_startup(int argc, char **argv)
 	e_in = CreateEvent(nullptr, false, false, nullptr);
 	e_out = CreateEvent(nullptr, false, false, nullptr);
 
+	if (!convey_open_log(conf.log_path, log_handle)
+			|| !convey_open_log(conf.log_recv_path, log_recv_handle)
+			|| !convey_open_log(conf.log_send_path, log_send_handle)) {
+		convey_error();
+		convey_shutdown();
+		return convey_setup_exit_err;
+	}
+
 	if (!conf.bridge) {
 		is_console = is_console_handle(in) && is_console_handle(out);
 
@@ -1008,6 +1110,7 @@ restart:
 				}
 
 				if (bytes) {
+					convey_log_recv(buf, bytes);
 					rc = convey_write_pipe(bpipe, buf, &bytes, e_out, er);
 					if (!rc) {
 						if (!is_error) {
@@ -1039,6 +1142,7 @@ restart:
 				}
 
 				if (bytes) {
+					convey_log_sent(buf, bytes);
 					rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
 					if (!rc) {
 						if (!is_error) {
@@ -1096,6 +1200,7 @@ restart:
 					bytes = convey_trim_crlf(buf, bytes);
 				}
 
+				convey_log_sent(buf, bytes);
 				rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
 				if (!rc) {
 					if (!is_error) {
@@ -1138,6 +1243,7 @@ restart:
 			}
 
 			if (bytes) {
+				convey_log_recv(buf, bytes);
 				if (out_is_pipe) {
 					rc = convey_write_pipe(out, buf, &bytes, e_out, er);
 				} else {

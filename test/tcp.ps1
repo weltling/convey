@@ -190,11 +190,118 @@ function Test-TcpClientReconnect {
     }
 }
 
+function Test-LogRecv {
+    # --log-recv tees everything received from the target into a file.
+    $port = Get-FreePort
+    $payload = "log-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $logFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--log-recv", $logFile `
+        -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        $b = [System.Text.Encoding]::ASCII.GetBytes($payload)
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        Start-Sleep -Milliseconds 600
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    Assert-Equal $payload ([System.IO.File]::ReadAllText($logFile).Trim()) '--log-recv: received bytes written to log file'
+    Remove-Item $logFile, $outFile -ErrorAction SilentlyContinue
+}
+
+function Test-LogSend {
+    # --log-send tees everything sent to the target into a file.
+    $port = Get-FreePort
+    $payload = "send-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $sendLog = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($inFile, $payload)
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--log-send", $sendLog `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        Read-Text $s 256 3000 | Out-Null
+        Start-Sleep -Milliseconds 400
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    Assert-Equal $payload ([System.IO.File]::ReadAllText($sendLog).Trim()) '--log-send: sent bytes written to log file'
+    Remove-Item $inFile, $outFile, $sendLog -ErrorAction SilentlyContinue
+}
+
+function Test-LogConflict {
+    # Two log options must not name the same file.
+    $port = Get-FreePort
+    $same = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--log", $same, "--log-recv", $same `
+        -RedirectStandardError $errFile -PassThru -NoNewWindow -Wait
+    $err = [System.IO.File]::ReadAllText($errFile)
+    Assert-Equal $true ($p.ExitCode -ne 0) '--log conflict: exits with error'
+    Assert-Equal $true ($err.Contains('different file')) '--log conflict: reports the clash'
+    Remove-Item $same, $errFile -ErrorAction SilentlyContinue
+}
+
+function Test-Log {
+    # --log marks each block > (sent) or < (received) in one file.
+    $port = Get-FreePort
+    $sent = "tx-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $recv = "rx-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $bothLog = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($inFile, $sent)
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--log", $bothLog `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        Read-Text $s 256 3000 | Out-Null
+        $b = [System.Text.Encoding]::ASCII.GetBytes($recv)
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $log = [System.IO.File]::ReadAllText($bothLog)
+    Assert-Equal $true $log.Contains("> $sent") '--log: sent block marked with >'
+    Assert-Equal $true $log.Contains("< $recv") '--log: received block marked with <'
+    Remove-Item $inFile, $outFile, $bothLog -ErrorAction SilentlyContinue
+}
+
 Write-Host "Testing $Convey"
 Test-TcpListenRoundTrip
 Test-TcpListenIPv6
 Test-Bridge
 Test-TcpClientReconnect
+Test-Log
+Test-LogRecv
+Test-LogSend
+Test-LogConflict
 
 if ($script:failures -gt 0) {
     Write-Host "$($script:failures) test(s) failed."
