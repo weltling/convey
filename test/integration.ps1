@@ -15,6 +15,7 @@ if (-not (Test-Path $Convey)) {
 }
 $Convey = (Resolve-Path $Convey).Path
 
+#region Helpers
 $script:failures = 0
 function Assert-Equal($expected, $actual, $name) {
     if ($expected -ceq $actual) {
@@ -45,7 +46,9 @@ function Read-Text($stream, $count, $ms) {
     if (-not $task.Wait($ms)) { return $null }
     return [System.Text.Encoding]::ASCII.GetString($buf, 0, $task.Result)
 }
+#endregion
 
+#region TCP transport
 function Test-TcpListenRoundTrip {
     $port = Get-FreePort
     $toSocket = "from-stdin-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -104,7 +107,9 @@ function Test-TcpListenIPv6 {
     }
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
+#endregion
 
+#region Bridge
 function Test-Bridge {
     $port = Get-FreePort
     $pipeName = "conveytest_" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -140,7 +145,9 @@ function Test-Bridge {
         Stop-Proc $p
     }
 }
+#endregion
 
+#region Reconnect
 function Test-TcpClientReconnect {
     # convey connects out with --reconnect; its stdin is an open, idle pipe.
     # Without the stdin-wake fix a worker would block there and the reconnect
@@ -189,7 +196,9 @@ function Test-TcpClientReconnect {
         $listener.Stop()
     }
 }
+#endregion
 
+#region Logging
 function Test-LogRecv {
     # --log-recv tees everything received from the target into a file.
     $port = Get-FreePort
@@ -292,16 +301,22 @@ function Test-Log {
     Assert-Equal $true $log.Contains("< $recv") '--log: received block marked with <'
     Remove-Item $inFile, $outFile, $bothLog -ErrorAction SilentlyContinue
 }
+#endregion
+
+#region Runner
+$tests = @(
+    'Test-TcpListenRoundTrip'
+    'Test-TcpListenIPv6'
+    'Test-Bridge'
+    'Test-TcpClientReconnect'
+    'Test-LogRecv'
+    'Test-LogSend'
+    'Test-LogConflict'
+    'Test-Log'
+)
 
 Write-Host "Testing $Convey"
-Test-TcpListenRoundTrip
-Test-TcpListenIPv6
-Test-Bridge
-Test-TcpClientReconnect
-Test-Log
-Test-LogRecv
-Test-LogSend
-Test-LogConflict
+foreach ($t in $tests) { & $t }
 
 if ($script:failures -gt 0) {
     Write-Host "$($script:failures) test(s) failed."
@@ -309,3 +324,4 @@ if ($script:failures -gt 0) {
 }
 Write-Host "All tests passed."
 exit 0
+#endregion
