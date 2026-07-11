@@ -203,12 +203,13 @@ function Test-LogRecv {
     # --log-recv tees everything received from the target into a file.
     $port = Get-FreePort
     $payload = "log-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $inFile = [System.IO.Path]::GetTempFileName()
     $logFile = [System.IO.Path]::GetTempFileName()
     $outFile = [System.IO.Path]::GetTempFileName()
 
     $p = Start-Process -FilePath $Convey `
         -ArgumentList "tcp-listen:$port", "--no-xterm", "--log-recv", $logFile `
-        -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
     try {
         Start-Sleep -Milliseconds 600
         $client = [System.Net.Sockets.TcpClient]::new()
@@ -223,7 +224,7 @@ function Test-LogRecv {
     }
     Start-Sleep -Milliseconds 200
     Assert-Equal $payload ([System.IO.File]::ReadAllText($logFile).Trim()) '--log-recv: received bytes written to log file'
-    Remove-Item $logFile, $outFile -ErrorAction SilentlyContinue
+    Remove-Item $inFile, $logFile, $outFile -ErrorAction SilentlyContinue
 }
 
 function Test-LogSend {
