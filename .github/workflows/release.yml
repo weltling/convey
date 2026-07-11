@@ -30,7 +30,7 @@ jobs:
       - name: Compile convey
         run: nmake VERSION=${{ env.CONVEY_VERSION }}
       - name: Package release build
-        run: 7z a ${{ env.RELEASE_ASSET_NAME }} convey.exe convey.pdb LICENSE README.md
+        run: 7z a ${{ env.RELEASE_ASSET_NAME }} convey.exe convey.pdb LICENSE licenses README.md
       - name: Upload release build
         shell: pwsh
         run: gh release upload "${{ env.RELEASE_TAG }}" "${{ env.RELEASE_ASSET_NAME }}" --clobber
