@@ -28,6 +28,7 @@
  */
 
 /* {{{ Includes */
+#define NOMINMAX
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -41,7 +42,7 @@
 #include <thread>
 #include <atomic>
 
-#include "popl.hpp"
+#include "CLI11.hpp"
 
 #include "config.h"
 /* }}} */
@@ -243,23 +244,6 @@ static bool convey_baud_is_valid(uint32_t b)
 	}
 }
 
-static decltype(auto) convey_get_baud(std::shared_ptr<popl::Value<uint32_t>>& opt)
-{
-	uint32_t b;
-
-	if (opt->is_set()) {
-		b = opt->value();
-		if (!convey_baud_is_valid(b)) {
-			std::cerr << "convey: unsupported baud rate '" << b << "'" << std::endl;
-			return ((decltype(b))-1);
-		}
-	} else {
-		b = opt->get_default();
-	}
-
-	return b;
-}
-
 static uint8_t convey_parity_from_string(std::string p)
 {
 	for (size_t i = 0; i < p.size(); i++) {
@@ -279,20 +263,6 @@ static uint8_t convey_parity_from_string(std::string p)
 	return ((uint8_t)-1);
 }
 
-static decltype(auto) convey_get_parity(std::shared_ptr<popl::Value<std::string>>& opt)
-{
-	uint8_t ret = NOPARITY;
-
-	if (opt->is_set()) {
-		ret = convey_parity_from_string(opt->value());
-		if (((decltype(ret))-1) == ret) {
-			std::cerr << "convey: unsupported parity '" << opt->value() << "'" << std::endl;
-		}
-	}
-
-	return ret;
-}
-
 static uint8_t convey_stop_bits_from_string(const std::string& p)
 {
 	if (!p.compare("1")) {
@@ -303,20 +273,6 @@ static uint8_t convey_stop_bits_from_string(const std::string& p)
 		return TWOSTOPBITS;
 	}
 	return ((uint8_t)-1);
-}
-
-static decltype(auto) convey_get_stop_bits(std::shared_ptr<popl::Value<std::string>>& opt)
-{
-	uint8_t ret = ONESTOPBIT;
-
-	if (opt->is_set()) {
-		ret = convey_stop_bits_from_string(opt->value());
-		if (((decltype(ret))-1) == ret) {
-			std::cerr << "convey: unsupported stop bits '" << opt->value() << "'" << std::endl;
-		}
-	}
-
-	return ret;
 }
 
 static convey_flow_control convey_flow_control_from_string(std::string p)
@@ -336,186 +292,156 @@ static convey_flow_control convey_flow_control_from_string(std::string p)
 	return ((convey_flow_control)-1);
 }
 
-static decltype(auto) convey_get_flow_control(std::shared_ptr<popl::Value<std::string>>& opt)
-{
-	convey_flow_control ret = convey_flow_control_none;
-
-	if (opt->is_set()) {
-		ret = convey_flow_control_from_string(opt->value());
-		if (((decltype(ret))-1) == ret) {
-			std::cerr << "convey: unsupported flow control '" << opt->value() << "'" << std::endl;
-		}
-	}
-
-	return ret;
-}
-
-static void convey_usage_print(popl::OptionParser& op)
-{/*{{{*/
-	std::cerr << "Usage: convey [options] \\\\.\\pipe\\<pipe name>" << std::endl;
-	std::cerr << "       convey [options] \\\\.\\COM<num>" << std::endl;
-	std::cerr << "       convey [options] tcp:<host>:<port>" << std::endl;
-	std::cerr << "       convey [options] tcp-listen:<port>" << std::endl;
-	std::cerr << "       convey --bridge --pipe-server \\\\.\\pipe\\<name> tcp:<host>:<port>" << std::endl;
-	std::cerr << std::endl;
-	std::cerr << "IPC through a named pipe, a serial port or a TCP endpoint." << std::endl;
-	std::cerr << std::endl;
-	std::cout << op << std::endl;
-}/*}}}*/
-
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
-	popl::OptionParser op{};
-	auto baud_opt = op.add<popl::Value<uint32_t>>("b", "baud", "Baud rate in bps, only relevant for serial communication.", CBR_115200);
-	auto parity_opt = op.add<popl::Value<std::string>>("", "parity", "Parity scheme (even, mark, no, odd, space).", "no");
-	auto stop_bits_opt = op.add<popl::Value<std::string>>("", "stop-bits", "Stop bits (1, 1.5, 2).", "1");
-	auto byte_size_opt = op.add<popl::Value<uint32_t>>("", "byte-size", "The number of bits in a byte.", 8);
-	auto flow_control_opt = op.add<popl::Value<std::string>>("", "flow-control", "Flow control (none, xon/xoff, rts/cts, dsr/dtr).", "none");
-	auto help_opt = op.add<popl::Switch>("h", "help", "Display this help message and exit.");
-	auto pipe_path_opt = op.add<popl::Value<std::string>>("d", "dev", "Path to the named pipe or COM device.");
-	auto pipe_poll_unavail_opt = op.add<popl::Value<double>>("p", "poll", "Poll pipe for N seconds on startup.", 0);
-	auto no_xterm_opt = op.add<popl::Switch>("", "no-xterm", "Disable xterm support.");
-	auto reconnect_opt = op.add<popl::Switch>("", "reconnect", "Try to reconnect after connection loss.");
-	auto bridge_opt = op.add<popl::Switch>("", "bridge", "Bridge mode: pump raw bytes between a pipe server and the endpoint.");
-	auto pipe_server_opt = op.add<popl::Value<std::string>>("", "pipe-server", "Create a named pipe server with this name (bridge mode).");
-	auto log_opt = op.add<popl::Value<std::string>>("", "log", "Log the full session to a file, each block marked > (sent) or < (received).");
-	auto log_recv_opt = op.add<popl::Value<std::string>>("", "log-recv", "Log only the received stream to a file.");
-	auto log_send_opt = op.add<popl::Value<std::string>>("", "log-send", "Log only the sent stream to a file.");
-	auto log_append_opt = op.add<popl::Switch>("", "log-append", "Append to the log files instead of overwriting them.");
-	auto verbose_opt = op.add<popl::Switch>("v", "verbose", "Print some additional messages.");
-	auto version_opt = op.add<popl::Switch>("V", "version", "Output version information and exit.");
+	CLI::App app{"IPC through a named pipe, a serial port or a TCP endpoint.", "convey"};
+	app.usage(
+		"Usage: convey [options] \\\\.\\pipe\\<pipe name>\n"
+		"       convey [options] \\\\.\\COM<num>\n"
+		"       convey [options] tcp:<host>:<port>\n"
+		"       convey [options] tcp-listen:<port>\n"
+		"       convey --bridge --pipe-server \\\\.\\pipe\\<name> tcp:<host>:<port>");
+	app.get_formatter()->column_width(40);
+
+	std::string target;
+	std::string dev;
+	std::string log_path, log_recv_path, log_send_path, pipe_server;
+	std::string parity = "no", stop_bits = "1", flow_control = "none";
+	uint32_t baud = CBR_115200, byte_size = 8;
+	double poll = 0.0;
+	bool bridge = false, reconnect = false, no_xterm = false, log_append = false, verbose = false;
+
+	// Endpoint given as the first positional argument; --dev is an alias.
+	app.add_option("target", target, "")->group("");
+
+	app.add_option("-d,--dev", dev, "Path to the named pipe or COM device.")->group("Connection")->type_name("PATH");
+	app.add_option("-p,--poll", poll, "Poll pipe for N seconds on startup.")->group("Connection")->capture_default_str()->type_name("SECONDS");
+	app.add_flag("--reconnect", reconnect, "Try to reconnect after connection loss.")->group("Connection");
+
+	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
+	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
+	app.add_option("--parity", parity, "Parity scheme (even, mark, no, odd, space).")->group("Serial")->capture_default_str()->type_name("SCHEME");
+	app.add_option("--stop-bits", stop_bits, "Stop bits (1, 1.5, 2).")->group("Serial")->capture_default_str()->type_name("BITS");
+	app.add_option("--flow-control", flow_control, "Flow control (none, xon/xoff, rts/cts, dsr/dtr).")->group("Serial")->capture_default_str()->type_name("MODE");
+
+	app.add_flag("--bridge", bridge, "Bridge mode: pump raw bytes between a pipe server and the endpoint.")->group("Bridge");
+	app.add_option("--pipe-server", pipe_server, "Create a named pipe server with this name (bridge mode).")->group("Bridge")->type_name("NAME");
+
+	app.add_option("--log", log_path, "Log the full session to a file, each block marked > (sent) or < (received).")->group("Logging")->type_name("FILE");
+	app.add_option("--log-recv", log_recv_path, "Log only the received stream to a file.")->group("Logging")->type_name("FILE");
+	app.add_option("--log-send", log_send_path, "Log only the sent stream to a file.")->group("Logging")->type_name("FILE");
+	app.add_flag("--log-append", log_append, "Append to the log files instead of overwriting them.")->group("Logging");
+
+	app.add_flag("--no-xterm", no_xterm, "Disable xterm support.")->group("General");
+	app.set_help_flag("-h,--help", "Display this help message and exit.")->group("General");
+	app.set_version_flag("-V,--version", std::string(VERSION), "Output version information and exit.")->group("General");
+	app.add_flag("-v,--verbose", verbose, "Print some additional messages.")->group("General");
 
 	try {
-		op.parse(argc, argv);
-
-		if (op.unknown_options().size() > 0) {
-			for (const auto& unknown_option: op.unknown_options()) {
-				std::cerr << argv[0] << ": unknown option '" << unknown_option << "'" << std::endl;
-				std::cerr << "Try 'convey --help' for more information." << std::endl;
-				return convey_setup_exit_err;
-			}
-		}
-
-		if (help_opt->count() >= 1) {
-			convey_usage_print(op);
-			return convey_setup_exit_ok;
-		}
-
-		if (version_opt->count() >= 1) {
-			std::cout << VERSION << std::endl;
-			return convey_setup_exit_ok;
-		}
-
-		if (verbose_opt->count() >= 1) {
-			conf.verbose = true;
-		}
-
-		if (pipe_path_opt->is_set()) {
-			conf.pipe_path = pipe_path_opt->value();
-		} else if (op.non_option_args().size() >= 1) {
-			// If not passed explicitly by opt, pipe is passed just as a first arg.
-			conf.pipe_path = op.non_option_args()[0];
-		} else {
-			std::cerr << argv[0] << ": empty pipe path" << std::endl;
-			std::cerr << "Try 'convey --help' for more information." << std::endl;
-			return convey_setup_exit_err;
-		}
-
-		convey_transport_spec ts = convey_parse_transport(conf.pipe_path);
-		if (!ts.ok) {
-			if (convey_tp_tcp_server == ts.kind) {
-				std::cerr << argv[0] << ": invalid listen endpoint '" << conf.pipe_path << "', expected tcp-listen:PORT" << std::endl;
-			} else {
-				std::cerr << argv[0] << ": invalid tcp endpoint '" << conf.pipe_path << "', expected tcp:HOST:PORT" << std::endl;
-			}
-			return convey_setup_exit_err;
-		}
-		conf.transport = ts.kind;
-		conf.tcp_host = ts.host;
-		conf.tcp_port = ts.port;
-
-		if (pipe_poll_unavail_opt->is_set()) {
-			conf.pipe_poll = pipe_poll_unavail_opt->value();
-		}
-
-		if (no_xterm_opt->count() >= 1) {
-			conf.no_xterm = true;
-		}
-
-		conf.baud = convey_get_baud(baud_opt);
-		if (((decltype(conf.baud))-1) == conf.baud) {
-			return convey_setup_exit_err;
-		}
-
-		conf.parity = convey_get_parity(parity_opt);
-		if (((decltype(conf.parity))-1) == conf.parity) {
-			return convey_setup_exit_err;
-		}
-
-		conf.stop_bits = convey_get_stop_bits(stop_bits_opt);
-		if (((decltype(conf.stop_bits))-1) == conf.stop_bits) {
-			return convey_setup_exit_err;
-		}
-
-		if (byte_size_opt->is_set()) {
-			conf.byte_size = byte_size_opt->value();
-		} else {
-			conf.byte_size = byte_size_opt->get_default();
-		}
-
-		conf.flow_control = convey_get_flow_control(flow_control_opt);
-
-		if (reconnect_opt->count() >= 1) {
-			restart_on_exit = true;
-		}
-
-		if (bridge_opt->count() >= 1) {
-			conf.bridge = true;
-			if (!pipe_server_opt->is_set()) {
-				std::cerr << argv[0] << ": --bridge requires --pipe-server <name>" << std::endl;
-				return convey_setup_exit_err;
-			}
-			conf.bridge_pipe_name = pipe_server_opt->value();
-			restart_on_exit = true;
-		}
-
-		if (log_opt->is_set()) {
-			conf.log_path = log_opt->value();
-		}
-		if (log_recv_opt->is_set()) {
-			conf.log_recv_path = log_recv_opt->value();
-		}
-		if (log_send_opt->is_set()) {
-			conf.log_send_path = log_send_opt->value();
-		}
-		if (log_append_opt->count() >= 1) {
-			conf.log_append = true;
-		}
-
-		// The log options write to independent files and may be combined,
-		// but two of them must not name the same file: the handles do not
-		// share write access, and mixing raw and marked output would
-		// corrupt the file.
-		const std::string* log_paths[] = { &conf.log_path, &conf.log_recv_path, &conf.log_send_path };
-		for (size_t i = 0; i < 3; ++i) {
-			for (size_t j = i + 1; j < 3; ++j) {
-				if (!log_paths[i]->empty() && 0 == lstrcmpiA(log_paths[i]->c_str(), log_paths[j]->c_str())) {
-					std::cerr << argv[0] << ": the log options must each use a different file" << std::endl;
-					return convey_setup_exit_err;
-				}
-			}
-		}
+		app.parse(argc, argv);
 	}
-	catch (const popl::invalid_option& e)
-	{
+	catch (const CLI::CallForHelp&) {
+		std::cout << app.help();
+		return convey_setup_exit_ok;
+	}
+	catch (const CLI::CallForVersion&) {
+		std::cout << VERSION << std::endl;
+		return convey_setup_exit_ok;
+	}
+	catch (const CLI::ParseError& e) {
 		std::cerr << "convey: " << e.what() << std::endl;
 		std::cerr << "Try 'convey --help' for more information." << std::endl;
 		return convey_setup_exit_err;
 	}
-	catch (const std::exception& e)
-	{
-		std::cerr << "convey: " << e.what() << std::endl;
+
+	conf.verbose = verbose;
+
+	if (!dev.empty()) {
+		conf.pipe_path = dev;
+	} else if (!target.empty()) {
+		conf.pipe_path = target;
+	} else {
+		std::cerr << argv[0] << ": empty pipe path" << std::endl;
+		std::cerr << "Try 'convey --help' for more information." << std::endl;
 		return convey_setup_exit_err;
+	}
+
+	convey_transport_spec ts = convey_parse_transport(conf.pipe_path);
+	if (!ts.ok) {
+		if (convey_tp_tcp_server == ts.kind) {
+			std::cerr << argv[0] << ": invalid listen endpoint '" << conf.pipe_path << "', expected tcp-listen:PORT" << std::endl;
+		} else {
+			std::cerr << argv[0] << ": invalid tcp endpoint '" << conf.pipe_path << "', expected tcp:HOST:PORT" << std::endl;
+		}
+		return convey_setup_exit_err;
+	}
+	conf.transport = ts.kind;
+	conf.tcp_host = ts.host;
+	conf.tcp_port = ts.port;
+
+	conf.pipe_poll = poll;
+	conf.no_xterm = no_xterm;
+
+	if (!convey_baud_is_valid(baud)) {
+		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
+		return convey_setup_exit_err;
+	}
+	conf.baud = baud;
+
+	uint8_t par = convey_parity_from_string(parity);
+	if (((uint8_t)-1) == par) {
+		std::cerr << "convey: unsupported parity '" << parity << "'" << std::endl;
+		return convey_setup_exit_err;
+	}
+	conf.parity = par;
+
+	uint8_t sb = convey_stop_bits_from_string(stop_bits);
+	if (((uint8_t)-1) == sb) {
+		std::cerr << "convey: unsupported stop bits '" << stop_bits << "'" << std::endl;
+		return convey_setup_exit_err;
+	}
+	conf.stop_bits = sb;
+
+	convey_flow_control fc = convey_flow_control_from_string(flow_control);
+	if (((convey_flow_control)-1) == fc) {
+		std::cerr << "convey: unsupported flow control '" << flow_control << "'" << std::endl;
+		return convey_setup_exit_err;
+	}
+	conf.flow_control = fc;
+
+	conf.byte_size = byte_size;
+
+	if (reconnect) {
+		restart_on_exit = true;
+	}
+
+	if (bridge) {
+		conf.bridge = true;
+		if (pipe_server.empty()) {
+			std::cerr << argv[0] << ": --bridge requires --pipe-server <name>" << std::endl;
+			return convey_setup_exit_err;
+		}
+		conf.bridge_pipe_name = pipe_server;
+		restart_on_exit = true;
+	}
+
+	conf.log_path = log_path;
+	conf.log_recv_path = log_recv_path;
+	conf.log_send_path = log_send_path;
+	conf.log_append = log_append;
+
+	// The log options write to independent files and may be combined,
+	// but two of them must not name the same file: the handles do not
+	// share write access, and mixing raw and marked output would
+	// corrupt the file.
+	const std::string* log_paths[] = { &conf.log_path, &conf.log_recv_path, &conf.log_send_path };
+	for (size_t i = 0; i < 3; ++i) {
+		for (size_t j = i + 1; j < 3; ++j) {
+			if (!log_paths[i]->empty() && 0 == lstrcmpiA(log_paths[i]->c_str(), log_paths[j]->c_str())) {
+				std::cerr << argv[0] << ": the log options must each use a different file" << std::endl;
+				return convey_setup_exit_err;
+			}
+		}
 	}
 
 	return convey_setup_ok;
