@@ -133,6 +133,7 @@ static DWORD convey_trim_crlf(const char* buf, DWORD bytes)
 struct convey_conf {
 	bool verbose;
 	bool no_xterm;
+	bool read_only;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -309,7 +310,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string parity = "no", stop_bits = "1", flow_control = "none";
 	uint32_t baud = CBR_115200, byte_size = 8;
 	double poll = 0.0;
-	bool bridge = false, reconnect = false, no_xterm = false, log_append = false, verbose = false;
+	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, log_append = false, verbose = false;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -333,6 +334,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--log-append", log_append, "Append to the log files instead of overwriting them.")->group("Logging");
 
 	app.add_flag("--no-xterm", no_xterm, "Disable xterm support.")->group("General");
+	app.add_flag("--read-only", read_only, "Monitor only and do not send anything to the endpoint.")->group("General");
 	app.set_help_flag("-h,--help", "Display this help message and exit.")->group("General");
 	app.set_version_flag("-V,--version", std::string(VERSION), "Output version information and exit.")->group("General");
 	app.add_flag("-v,--verbose", verbose, "Print some additional messages.")->group("General");
@@ -381,6 +383,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 	conf.pipe_poll = poll;
 	conf.no_xterm = no_xterm;
+	conf.read_only = read_only;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1097,6 +1100,9 @@ restart:
 	}
 
 	std::thread t0([]() {
+		if (conf.read_only) {
+			return;
+		}
 		while (true) {
 			if (is_error || shutting_down) {
 				return;

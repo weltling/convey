@@ -204,6 +204,13 @@ int main()
 		EXPECT(conf.no_xterm);
 		EXPECT(conf.verbose);
 	}
+	{
+		// read only sets monitor mode off by default.
+		EXPECT(run_setup({"convey", "COM1"}) == convey_setup_ok);
+		EXPECT(!conf.read_only);
+		EXPECT(run_setup({"convey", "--read-only", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.read_only);
+	}
 
 	if (g_fail) {
 		std::cerr << g_fail << " unit test(s) failed." << std::endl;

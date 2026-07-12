@@ -198,6 +198,40 @@ function Test-TcpClientReconnect {
 }
 #endregion
 
+#region Console
+function Test-ReadOnly {
+    # read only suppresses stdin to endpoint but still displays received bytes.
+    $port = Get-FreePort
+    $recv = "rx-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($inFile, "should-not-be-sent")
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--read-only" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        # Nothing typed should reach the socket here.
+        $leaked = Read-Text $s 256 1200
+        Assert-Equal '' ([string]$leaked) 'read only stdin not forwarded to endpoint'
+        # The receive direction still works.
+        $b = [System.Text.Encoding]::ASCII.GetBytes($recv)
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    Assert-Equal $recv ([System.IO.File]::ReadAllText($outFile).Trim()) 'read only received bytes still reach stdout'
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
+#endregion
+
 #region Logging
 function Test-LogRecv {
     # --log-recv tees everything received from the target into a file.
@@ -310,6 +344,7 @@ $tests = @(
     'Test-TcpListenIPv6'
     'Test-Bridge'
     'Test-TcpClientReconnect'
+    'Test-ReadOnly'
     'Test-LogRecv'
     'Test-LogSend'
     'Test-LogConflict'
