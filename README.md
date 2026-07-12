@@ -101,6 +101,13 @@ Convey can log the session to a file, for example to keep a boot or panic log th
 The log options may be combined to write several files at once (for example a marked session plus a raw received dump), but each must name a different file. `--log-append` applies to all of them. For example, `convey.exe --log session.log \\.\pipe\<pipe name>`. The logs stay open across `--reconnect` so they are not truncated on every reconnect.
 
 
+# Read-only monitor mode
+
+Pass `--read-only` to watch an endpoint without sending anything to it. Convey still shows and logs everything received, but the host-to-endpoint direction is disabled, so a stray keypress cannot interrupt a boot or another person's session. It applies to the interactive console; `--bridge` is always a two-way relay and ignores it.
+
+For example, `convey.exe --read-only --log boot.log tcp:10.0.0.5:4445`.
+
+
 # Debugging Linux kernel
 
 ## Prerequisities
