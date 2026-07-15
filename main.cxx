@@ -135,6 +135,7 @@ struct convey_conf {
 	bool no_xterm;
 	bool read_only;
 	bool timestamps;
+	bool hex;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -311,7 +312,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string parity = "no", stop_bits = "1", flow_control = "none";
 	uint32_t baud = CBR_115200, byte_size = 8;
 	double poll = 0.0;
-	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, log_append = false, verbose = false;
+	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -337,6 +338,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--no-xterm", no_xterm, "Disable xterm support.")->group("General");
 	app.add_flag("--read-only", read_only, "Monitor only and do not send anything to the endpoint.")->group("General");
 	app.add_flag("--timestamps", timestamps, "Prefix each received line with a local time stamp.")->group("General");
+	app.add_flag("--hex", hex, "Show the received stream as a hex dump instead of text.")->group("General");
 	app.set_help_flag("-h,--help", "Display this help message and exit.")->group("General");
 	app.set_version_flag("-V,--version", std::string(VERSION), "Output version information and exit.")->group("General");
 	app.add_flag("-v,--verbose", verbose, "Print some additional messages.")->group("General");
@@ -387,6 +389,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.no_xterm = no_xterm;
 	conf.read_only = read_only;
 	conf.timestamps = timestamps;
+	conf.hex = hex;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1015,6 +1018,37 @@ static void convey_stamp_lines(const char* buf, DWORD bytes, bool& at_line_start
 		}
 	}
 }/*}}}*/
+
+static void convey_hexdump(const char* buf, DWORD bytes, size_t& offset, std::string& out)
+{/*{{{*/
+	DWORD i = 0;
+	while (i < bytes) {
+		DWORD row = (bytes - i < 16) ? (bytes - i) : 16;
+		char head[16];
+		int n = wsprintfA(head, "%08lx  ", (unsigned long)offset);
+		out.append(head, n);
+		for (DWORD j = 0; j < 16; ++j) {
+			if (j < row) {
+				char hb[8];
+				int m = wsprintfA(hb, "%02x ", (unsigned char)buf[i + j]);
+				out.append(hb, m);
+			} else {
+				out.append("   ", 3);
+			}
+			if (7 == j) {
+				out.push_back(' ');
+			}
+		}
+		out.append("|", 1);
+		for (DWORD j = 0; j < row; ++j) {
+			unsigned char c = (unsigned char)buf[i + j];
+			out.push_back((c >= 0x20 && c < 0x7f) ? (char)c : '.');
+		}
+		out.append("|\n", 2);
+		offset += row;
+		i += row;
+	}
+}/*}}}*/
 #undef OV_E
 /* }}} */
 
@@ -1197,21 +1231,26 @@ restart:
 
 			if (bytes) {
 				convey_log_recv(buf, bytes);
+				const char* wbuf = buf;
+				DWORD wbytes = bytes;
+				std::string hexbuf, tsbuf;
+				if (conf.hex) {
+					static size_t hex_offset = 0;
+					convey_hexdump(wbuf, wbytes, hex_offset, hexbuf);
+					wbuf = hexbuf.data();
+					wbytes = (DWORD)hexbuf.size();
+				}
 				if (conf.timestamps) {
 					static bool ts_line_start = true;
-					std::string stamped;
-					convey_stamp_lines(buf, bytes, ts_line_start, stamped);
-					DWORD wb = (DWORD)stamped.size();
-					if (out_is_pipe) {
-						rc = convey_write_pipe(out, stamped.data(), &wb, e_out, er);
-					} else {
-						rc = WriteFile(out, stamped.data(), wb, &wb, nullptr);
-						er = GetLastError();
-					}
-				} else if (out_is_pipe) {
-					rc = convey_write_pipe(out, buf, &bytes, e_out, er);
+					convey_stamp_lines(wbuf, wbytes, ts_line_start, tsbuf);
+					wbuf = tsbuf.data();
+					wbytes = (DWORD)tsbuf.size();
+				}
+				DWORD wb = wbytes;
+				if (out_is_pipe) {
+					rc = convey_write_pipe(out, wbuf, &wb, e_out, er);
 				} else {
-					rc = WriteFile(out, buf, bytes, &bytes, nullptr);
+					rc = WriteFile(out, wbuf, wbytes, &wb, nullptr);
 					er = GetLastError();
 				}
 				if (!rc) {
