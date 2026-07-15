@@ -257,6 +257,34 @@ function Test-Timestamps {
     Assert-Equal $true ($out -match '\[\d\d:\d\d:\d\d\] hello') 'timestamps prefix the received line'
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
+
+function Test-Hex {
+    # hex renders the received stream as a hex dump
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--hex" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        $b = [System.Text.Encoding]::ASCII.GetBytes("KD")
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        Start-Sleep -Milliseconds 600
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $out = [System.IO.File]::ReadAllText($outFile)
+    Assert-Equal $true ($out -match '00000000\s+4b 44') 'hex dump shows the offset and bytes'
+    Assert-Equal $true ($out -match '\|KD\|') 'hex dump shows the ascii gutter'
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
 #endregion
 
 #region Logging
@@ -373,6 +401,7 @@ $tests = @(
     'Test-TcpClientReconnect'
     'Test-ReadOnly'
     'Test-Timestamps'
+    'Test-Hex'
     'Test-LogRecv'
     'Test-LogSend'
     'Test-LogConflict'

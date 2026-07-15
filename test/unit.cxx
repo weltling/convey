@@ -134,6 +134,33 @@ int main()
 		convey_stamp_lines("x\n", 2, ls, out);
 		EXPECT(ls);
 	}
+	{
+		// hex dump shows the offset, the bytes and an ascii gutter
+		size_t off = 0;
+		std::string out;
+		convey_hexdump("KD", 2, off, out);
+		EXPECT(off == 2);
+		EXPECT(out.find("00000000") != std::string::npos);
+		EXPECT(out.find("4b 44") != std::string::npos);
+		EXPECT(out.find("|KD|") != std::string::npos);
+	}
+	{
+		// a non printable byte shows as a dot in the gutter
+		size_t off = 0;
+		std::string out;
+		convey_hexdump("\x01" "A", 2, off, out);
+		EXPECT(out.find("01 41") != std::string::npos);
+		EXPECT(out.find("|.A|") != std::string::npos);
+	}
+	{
+		// the offset advances across calls
+		size_t off = 0;
+		std::string out;
+		convey_hexdump("ab", 2, off, out);
+		convey_hexdump("cd", 2, off, out);
+		EXPECT(off == 4);
+		EXPECT(out.find("00000002") != std::string::npos);
+	}
 
 	// --- convey_conf_setup: parser functional-equivalence coverage ---
 	{
