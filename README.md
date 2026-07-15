@@ -108,6 +108,13 @@ Pass `--read-only` to watch an endpoint without sending anything to it. Convey s
 For example, `convey.exe --read-only --log boot.log tcp:10.0.0.5:4445`.
 
 
+# Timestamps
+
+Pass `--timestamps` to prefix each received line with a local time stamp in `[HH:MM:SS]` form. It stamps the stream shown on stdout, which helps correlate boot or hang timing on the host side. The log files are left raw.
+
+For example, `convey.exe --timestamps tcp:10.0.0.5:4445`.
+
+
 # Debugging Linux kernel
 
 ## Prerequisities
