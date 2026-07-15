@@ -230,6 +230,33 @@ function Test-ReadOnly {
     Assert-Equal $recv ([System.IO.File]::ReadAllText($outFile).Trim()) 'read only received bytes still reach stdout'
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
+
+function Test-Timestamps {
+    # timestamps prefix received lines with a local time stamp
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--timestamps" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        $b = [System.Text.Encoding]::ASCII.GetBytes("hello`n")
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        Start-Sleep -Milliseconds 600
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $out = [System.IO.File]::ReadAllText($outFile)
+    Assert-Equal $true ($out -match '\[\d\d:\d\d:\d\d\] hello') 'timestamps prefix the received line'
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
 #endregion
 
 #region Logging
@@ -345,6 +372,7 @@ $tests = @(
     'Test-Bridge'
     'Test-TcpClientReconnect'
     'Test-ReadOnly'
+    'Test-Timestamps'
     'Test-LogRecv'
     'Test-LogSend'
     'Test-LogConflict'

@@ -115,6 +115,25 @@ int main()
 		EXPECT(rec[0] == '<');
 		EXPECT(rec[2] == 'x');
 	}
+	{
+		// timestamps prefix each line and preserve the payload
+		bool ls = true;
+		std::string out;
+		convey_stamp_lines("ab\ncd", 5, ls, out);
+		size_t brackets = 0;
+		for (size_t i = 0; i < out.size(); ++i) { if (out[i] == '[') ++brackets; }
+		EXPECT(brackets == 2);
+		EXPECT(!ls);
+		EXPECT(out.find("ab\n") != std::string::npos);
+		EXPECT(out.find("cd") != std::string::npos);
+	}
+	{
+		// a trailing newline leaves the next write at a line start
+		bool ls = true;
+		std::string out;
+		convey_stamp_lines("x\n", 2, ls, out);
+		EXPECT(ls);
+	}
 
 	// --- convey_conf_setup: parser functional-equivalence coverage ---
 	{

@@ -134,6 +134,7 @@ struct convey_conf {
 	bool verbose;
 	bool no_xterm;
 	bool read_only;
+	bool timestamps;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -310,7 +311,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string parity = "no", stop_bits = "1", flow_control = "none";
 	uint32_t baud = CBR_115200, byte_size = 8;
 	double poll = 0.0;
-	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, log_append = false, verbose = false;
+	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, log_append = false, verbose = false;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -335,6 +336,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 	app.add_flag("--no-xterm", no_xterm, "Disable xterm support.")->group("General");
 	app.add_flag("--read-only", read_only, "Monitor only and do not send anything to the endpoint.")->group("General");
+	app.add_flag("--timestamps", timestamps, "Prefix each received line with a local time stamp.")->group("General");
 	app.set_help_flag("-h,--help", "Display this help message and exit.")->group("General");
 	app.set_version_flag("-V,--version", std::string(VERSION), "Output version information and exit.")->group("General");
 	app.add_flag("-v,--verbose", verbose, "Print some additional messages.")->group("General");
@@ -384,6 +386,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.pipe_poll = poll;
 	conf.no_xterm = no_xterm;
 	conf.read_only = read_only;
+	conf.timestamps = timestamps;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -971,7 +974,7 @@ static bool convey_read_pipe(HANDLE h, char (& buf)[BUF_SIZE], DWORD* bytes, HAN
 	return rc;
 }
 
-static bool convey_write_pipe(HANDLE h, char(&buf)[BUF_SIZE], DWORD* bytes, HANDLE e, DWORD& er)
+static bool convey_write_pipe(HANDLE h, const char* buf, DWORD* bytes, HANDLE e, DWORD& er)
 {
 	DWORD total = *bytes, off = 0;
 
@@ -994,6 +997,24 @@ static bool convey_write_pipe(HANDLE h, char(&buf)[BUF_SIZE], DWORD* bytes, HAND
 	*bytes = off;
 	return true;
 }
+
+static void convey_stamp_lines(const char* buf, DWORD bytes, bool& at_line_start, std::string& out)
+{/*{{{*/
+	for (DWORD i = 0; i < bytes; ++i) {
+		if (at_line_start) {
+			SYSTEMTIME st;
+			GetLocalTime(&st);
+			char stamp[16];
+			int n = wsprintfA(stamp, "[%02u:%02u:%02u] ", st.wHour, st.wMinute, st.wSecond);
+			out.append(stamp, n);
+			at_line_start = false;
+		}
+		out.push_back(buf[i]);
+		if ('\n' == buf[i]) {
+			at_line_start = true;
+		}
+	}
+}/*}}}*/
 #undef OV_E
 /* }}} */
 
@@ -1176,7 +1197,18 @@ restart:
 
 			if (bytes) {
 				convey_log_recv(buf, bytes);
-				if (out_is_pipe) {
+				if (conf.timestamps) {
+					static bool ts_line_start = true;
+					std::string stamped;
+					convey_stamp_lines(buf, bytes, ts_line_start, stamped);
+					DWORD wb = (DWORD)stamped.size();
+					if (out_is_pipe) {
+						rc = convey_write_pipe(out, stamped.data(), &wb, e_out, er);
+					} else {
+						rc = WriteFile(out, stamped.data(), wb, &wb, nullptr);
+						er = GetLastError();
+					}
+				} else if (out_is_pipe) {
 					rc = convey_write_pipe(out, buf, &bytes, e_out, er);
 				} else {
 					rc = WriteFile(out, buf, bytes, &bytes, nullptr);
