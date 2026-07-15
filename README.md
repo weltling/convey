@@ -115,6 +115,13 @@ Pass `--timestamps` to prefix each received line with a local time stamp in `[HH
 For example, `convey.exe --timestamps tcp:10.0.0.5:4445`.
 
 
+# Hex view
+
+Pass `--hex` to show the received stream as a hex dump instead of text, in the familiar `offset  hex bytes  |ascii|` form. Only the display changes, so the log files stay raw. It combines with `--timestamps`, which stamps each dump row.
+
+For example, `convey.exe --hex tcp:10.0.0.5:4445`.
+
+
 # Debugging Linux kernel
 
 ## Prerequisities
