@@ -161,6 +161,32 @@ int main()
 		EXPECT(off == 4);
 		EXPECT(out.find("00000002") != std::string::npos);
 	}
+	{
+		// ctrl-a q is removed from the stream and yields the q command
+		bool esc = false;
+		std::string cmds;
+		char b[] = { 'h', 'i', 0x01, 'q', 'x' };
+		DWORD n = convey_filter_escape(b, 5, esc, cmds);
+		EXPECT(n == 3);
+		EXPECT(b[0] == 'h' && b[1] == 'i' && b[2] == 'x');
+		EXPECT(cmds == "q");
+		EXPECT(!esc);
+	}
+	{
+		// an escape at the end of a read leaves the command pending for the next read
+		bool esc = false;
+		std::string cmds;
+		char b1[] = { 'a', 0x01 };
+		DWORD n1 = convey_filter_escape(b1, 2, esc, cmds);
+		EXPECT(n1 == 1);
+		EXPECT(esc);
+		EXPECT(cmds.empty());
+		char b2[] = { 'q' };
+		DWORD n2 = convey_filter_escape(b2, 1, esc, cmds);
+		EXPECT(n2 == 0);
+		EXPECT(!esc);
+		EXPECT(cmds == "q");
+	}
 
 	// --- convey_conf_setup: parser functional-equivalence coverage ---
 	{

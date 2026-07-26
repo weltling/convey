@@ -285,6 +285,29 @@ function Test-Hex {
     Assert-Equal $true ($out -match '\|KD\|') 'hex dump shows the ascii gutter'
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
+
+function Test-CtrlAQuit {
+    # ctrl-a q from the input stream quits convey cleanly once connected
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](1, 113))
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $exited = $p.WaitForExit(3000)
+        Assert-Equal $true $exited 'ctrl-a q quits convey'
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
 #endregion
 
 #region Logging
@@ -402,6 +425,7 @@ $tests = @(
     'Test-ReadOnly'
     'Test-Timestamps'
     'Test-Hex'
+    'Test-CtrlAQuit'
     'Test-LogRecv'
     'Test-LogSend'
     'Test-LogConflict'
