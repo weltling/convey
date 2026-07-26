@@ -65,7 +65,6 @@ static bool is_console{false},
 			out_is_pipe{false};
 static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
-static std::atomic<bool> ctrl_mode{false};
 static bool restart_on_exit = false;
 static SOCKET listen_sock{INVALID_SOCKET};
 static HANDLE stdin_thread{INVALID_HANDLE_VALUE};
@@ -736,18 +735,9 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 	return s;
 }/*}}}*/
 
-static convey_setup_status convey_startup(int argc, char **argv)
+static convey_setup_status convey_connect(int argc, char **argv)
 {/*{{{*/
 	DWORD rc;
-
-	_setmode(_fileno(stdin), _O_BINARY);
-	_setmode(_fileno(stdout), _O_BINARY);
-	_setmode(_fileno(stderr), _O_BINARY);
-
-	convey_setup_status _rc = convey_conf_setup(argc, argv);
-	if(convey_setup_ok != _rc) {
-		return _rc;
-	}
 
 	if (convey_transport_is_tcp()) {
 		if (!convey_wsa_init()) {
@@ -919,14 +909,6 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		return convey_setup_exit_err;
 	}
 
-	if (!conf.bridge) {
-		is_console = is_console_handle(in) && is_console_handle(out);
-
-		if (is_console) {
-			setup_console();
-		}
-	}
-
 	return convey_setup_ok;
 }/*}}}*/
 
@@ -1049,17 +1031,146 @@ static void convey_hexdump(const char* buf, DWORD bytes, size_t& offset, std::st
 		i += row;
 	}
 }/*}}}*/
+
+static DWORD convey_filter_escape(char* buf, DWORD bytes, bool& esc_pending, std::string& cmds)
+{/*{{{*/
+	DWORD out = 0;
+	for (DWORD i = 0; i < bytes; ++i) {
+		char c = buf[i];
+		if (esc_pending) {
+			esc_pending = false;
+			cmds.push_back(c);
+		} else if (0x01 == c) {
+			esc_pending = true;
+		} else {
+			buf[out++] = c;
+		}
+	}
+	return out;
+}/*}}}*/
 #undef OV_E
 /* }}} */
 
 #ifndef CONVEY_UNIT_TEST
+static bool convey_read_console(HANDLE h, char* buf, DWORD cap, DWORD* bytes)
+{/*{{{*/
+	INPUT_RECORD recs[64];
+	DWORD n = 0;
+	if (!ReadConsoleInputW(h, recs, 64, &n)) {
+		return false;
+	}
+	DWORD out = 0;
+	for (DWORD i = 0; i < n; ++i) {
+		if (KEY_EVENT != recs[i].EventType || !recs[i].Event.KeyEvent.bKeyDown) {
+			continue;
+		}
+		wchar_t wc = recs[i].Event.KeyEvent.uChar.UnicodeChar;
+		if (0 == wc) {
+			continue;
+		}
+		for (WORD r = 0; r < recs[i].Event.KeyEvent.wRepeatCount; ++r) {
+			char mb[8];
+			int mlen = WideCharToMultiByte(CP_UTF8, 0, &wc, 1, mb, sizeof mb, nullptr, nullptr);
+			for (int k = 0; k < mlen && out < cap; ++k) {
+				buf[out++] = mb[k];
+			}
+		}
+	}
+	*bytes = out;
+	return true;
+}/*}}}*/
+
+static void convey_do_command(char cmd)
+{/*{{{*/
+	switch (cmd) {
+	case 'q':
+		if (conf.verbose) {
+			std::cout << std::endl << "convey: ctrl-a q, exit" << std::endl;
+		}
+		restart_on_exit = false;
+		convey_shutdown();
+		convey_final_cleanup();
+		ExitProcess(0);
+		break;
+	default:
+		break;
+	}
+}/*}}}*/
+
+static convey_setup_status convey_startup(int argc, char **argv)
+{/*{{{*/
+	_setmode(_fileno(stdin), _O_BINARY);
+	_setmode(_fileno(stdout), _O_BINARY);
+	_setmode(_fileno(stderr), _O_BINARY);
+
+	convey_setup_status rc = convey_conf_setup(argc, argv);
+	if (convey_setup_ok != rc) {
+		return rc;
+	}
+
+	if (!conf.bridge) {
+		in = GetStdHandle(STD_INPUT_HANDLE);
+		out = GetStdHandle(STD_OUTPUT_HANDLE);
+		in_is_pipe = GetFileType(in) == FILE_TYPE_PIPE;
+		out_is_pipe = GetFileType(out) == FILE_TYPE_PIPE;
+		is_console = is_console_handle(in) && is_console_handle(out);
+		if (is_console) {
+			setup_console();
+
+			/* One persistent watcher owns the console input for the whole run,
+			 * so the ctrl-a commands work even while waiting for a connection.
+			 * Redirected input is handled per connection so piped data is not
+			 * consumed before there is a target. */
+			std::thread([]() {
+				static bool esc_pending = false;
+				while (true) {
+					char buf[BUF_SIZE];
+					DWORD bytes{0}, er{0};
+
+					if (!convey_read_console(in, buf, sizeof buf, &bytes)) {
+						return;
+					}
+
+					std::string cmds;
+					bytes = convey_filter_escape(buf, bytes, esc_pending, cmds);
+					for (size_t k = 0; k < cmds.size(); ++k) {
+						convey_do_command(cmds[k]);
+					}
+
+					if (bytes && !conf.read_only && INVALID_HANDLE_VALUE != pipe) {
+						if (conf.no_xterm) {
+							bytes = convey_trim_crlf(buf, bytes);
+						}
+						convey_log_sent(buf, bytes);
+						DWORD w = bytes;
+						convey_write_pipe(pipe, buf, &w, e_pipe_w, er);
+					} else if (0 == bytes) {
+						std::this_thread::sleep_for(std::chrono::milliseconds(3));
+					}
+				}
+			}).detach();
+		}
+	}
+
+	return convey_setup_ok;
+}/*}}}*/
+
 int main(int argc, char** argv)
 {/*{{{*/
 
 	atexit(convey_final_cleanup);
 
-restart:
 	switch (convey_startup(argc, argv)) {
+		case convey_setup_ok:
+			break;
+		case convey_setup_exit_err:
+			return 1;
+		case convey_setup_exit_ok:
+			return 0;
+	}
+
+restart:
+	switch (convey_connect(argc, argv)) {
 		case convey_setup_ok:
 			// pass
 			break;
@@ -1147,7 +1258,6 @@ restart:
 		if (restart_on_exit) {
 			is_error = false;
 			shutting_down = false;
-			ctrl_mode = false;
 			goto restart;
 		}
 
@@ -1155,9 +1265,10 @@ restart:
 	}
 
 	std::thread t0([]() {
-		if (conf.read_only) {
+		if (is_console) {
 			return;
 		}
+		static bool esc_pending = false;
 		while (true) {
 			if (is_error || shutting_down) {
 				return;
@@ -1181,8 +1292,13 @@ restart:
 				return;
 			}
 
-			/* Do not send bytes typed in the ctrl mode. */
-			if (bytes && !ctrl_mode) {
+			std::string cmds;
+			bytes = convey_filter_escape(buf, bytes, esc_pending, cmds);
+			for (size_t k = 0; k < cmds.size(); ++k) {
+				convey_do_command(cmds[k]);
+			}
+
+			if (bytes && !conf.read_only) {
 				if (conf.no_xterm) {
 					bytes = convey_trim_crlf(buf, bytes);
 				}
@@ -1266,42 +1382,14 @@ restart:
 		}
 	});
 
-	std::thread t2([]() {
-		// Watch keystrokes to mimic screen/minicom command approach.
-		// TODO yet it's simple, but integrating some curses for better control would be great.
-		while (true) {
-			if (is_error || shutting_down) {
-				return;
-			}
-			if (!ctrl_mode && (GetAsyncKeyState(VK_CONTROL) & 0x8000)) {
-				ctrl_mode = true;
-				if (!(GetAsyncKeyState('A') & 0x8000)) {
-					ctrl_mode = false;
-				}
-			}
-			if (ctrl_mode && (GetAsyncKeyState('Q') & 0x8000)) {
-				ctrl_mode = false;
-				if (conf.verbose) {
-					std::cout << std::endl << "convey: ctrl-a q sent, exit" << std::endl;
-				}
-				convey_shutdown();
-				convey_final_cleanup();
-				ExitProcess(0);
-			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(128));
-		}
-	});
-
 	t0.join();
 	t1.join();
-	t2.join();
 
 	convey_shutdown();
 
 	if (restart_on_exit) {
 		is_error = false;
 		shutting_down = false;
-		ctrl_mode = false;
 		goto restart;
 	}
 
