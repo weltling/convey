@@ -122,6 +122,16 @@ Pass `--hex` to show the received stream as a hex dump instead of text, in the f
 For example, `convey.exe --hex tcp:10.0.0.5:4445`.
 
 
+# Commands
+
+While a session is running, press `Ctrl+A` followed by a command key:
+
+- `q` quits convey.
+- `b` sends a serial BREAK. It is held for about 300 ms and only works on a physical COM port; on a named pipe or TCP connection convey reports that break needs a serial port.
+
+A BREAK on the serial console is how a Linux guest receives `Alt+SysRq` (see the Sysrq section below).
+
+
 # Debugging Linux kernel
 
 ## Prerequisities
