@@ -1092,6 +1092,18 @@ static void convey_do_command(char cmd)
 		convey_final_cleanup();
 		ExitProcess(0);
 		break;
+	case 'b':
+		if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
+			SetCommBreak(pipe);
+			std::this_thread::sleep_for(std::chrono::milliseconds(300));
+			ClearCommBreak(pipe);
+			if (conf.verbose) {
+				std::cout << std::endl << "convey: ctrl-a b, break sent" << std::endl;
+			}
+		} else {
+			std::cerr << std::endl << "convey: break is only supported on a serial port" << std::endl;
+		}
+		break;
 	default:
 		break;
 	}

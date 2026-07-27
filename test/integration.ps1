@@ -308,6 +308,31 @@ function Test-CtrlAQuit {
     }
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
+
+function Test-CtrlABreak {
+    # ctrl-a b over a non-serial transport reports that break needs a serial port
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](1, 98))
+    $errFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm" `
+        -RedirectStandardInput $inFile -RedirectStandardError $errFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $err = [System.IO.File]::ReadAllText($errFile)
+    Assert-Equal $true ($err -match 'break is only supported on a serial port') 'ctrl-a b needs a serial port'
+    Remove-Item $inFile, $errFile -ErrorAction SilentlyContinue
+}
 #endregion
 
 #region Logging
@@ -426,6 +451,7 @@ $tests = @(
     'Test-Timestamps'
     'Test-Hex'
     'Test-CtrlAQuit'
+    'Test-CtrlABreak'
     'Test-LogRecv'
     'Test-LogSend'
     'Test-LogConflict'
