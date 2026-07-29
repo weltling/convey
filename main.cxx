@@ -188,6 +188,7 @@ struct convey_conf {
 	uint32_t max_retries;
 	convey_line dtr;
 	convey_line rts;
+	char escape;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -362,6 +363,30 @@ static convey_line convey_line_from_string(std::string p)
 	return ((convey_line)-1);
 }
 
+// Parse an escape key spec (^X, C-X, ctrl-X) into its control byte, or -1.
+static int convey_parse_escape(std::string s)
+{
+	std::string low = s;
+	for (size_t i = 0; i < low.size(); i++) {
+		low[i] = std::tolower(low[i]);
+	}
+	char key = 0;
+	if (2 == s.size() && '^' == s[0]) {
+		key = s[1];
+	} else if (3 == s.size() && 0 == low.compare(0, 2, "c-")) {
+		key = s[2];
+	} else if (6 == s.size() && 0 == low.compare(0, 5, "ctrl-")) {
+		key = s[5];
+	} else {
+		return -1;
+	}
+	int up = std::toupper(static_cast<unsigned char>(key));
+	if (up < '@' || up > '_') {
+		return -1;
+	}
+	return up & 0x1f;
+}
+
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	CLI::App app{"IPC through a named pipe, a serial port or a TCP endpoint.", "convey"};
@@ -383,6 +408,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
 	bool eol_raw = false, eol_lf = false, eol_crlf = false;
 	uint32_t max_retries = 0;
+	std::string escape_arg;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -412,6 +438,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--read-only", read_only, "Monitor only and do not send anything to the endpoint.")->group("General");
 	app.add_flag("--timestamps", timestamps, "Prefix each received line with a local time stamp.")->group("General");
 	app.add_flag("--hex", hex, "Show the received stream as a hex dump instead of text.")->group("General");
+	app.add_option("--escape", escape_arg, "Escape key for the ctrl-a commands (^A, ctrl-], ...).")->group("General")->type_name("KEY");
 	auto* opt_raw = app.add_flag("--raw", eol_raw, "Send input with no newline translation.")->group("General");
 	auto* opt_lf = app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF.")->group("General");
 	auto* opt_crlf = app.add_flag("--crlf", eol_crlf, "Translate sent LF newlines to CRLF.")->group("General");
@@ -471,6 +498,16 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.eol = eol_crlf ? convey_eol_crlf : eol_lf ? convey_eol_lf : eol_raw ? convey_eol_raw : convey_eol_auto;
 	conf.reconnect = reconnect;
 	conf.max_retries = max_retries;
+
+	conf.escape = 0x01;
+	if (!escape_arg.empty()) {
+		int e = convey_parse_escape(escape_arg);
+		if (e < 0) {
+			std::cerr << "convey: unsupported escape key '" << escape_arg << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+		conf.escape = static_cast<char>(e);
+	}
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1208,7 +1245,7 @@ static void convey_hexdump(const char* buf, DWORD bytes, size_t& offset, std::st
 	}
 }/*}}}*/
 
-static DWORD convey_filter_escape(char* buf, DWORD bytes, bool& esc_pending, std::string& cmds)
+static DWORD convey_filter_escape(char* buf, DWORD bytes, bool& esc_pending, std::string& cmds, char esc)
 {/*{{{*/
 	DWORD out = 0;
 	for (DWORD i = 0; i < bytes; ++i) {
@@ -1216,7 +1253,7 @@ static DWORD convey_filter_escape(char* buf, DWORD bytes, bool& esc_pending, std
 		if (esc_pending) {
 			esc_pending = false;
 			cmds.push_back(c);
-		} else if (0x01 == c) {
+		} else if (esc == c) {
 			esc_pending = true;
 		} else {
 			buf[out++] = c;
@@ -1354,7 +1391,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 					}
 
 					std::string cmds;
-					bytes = convey_filter_escape(buf, bytes, esc_pending, cmds);
+					bytes = convey_filter_escape(buf, bytes, esc_pending, cmds, conf.escape);
 					for (size_t k = 0; k < cmds.size(); ++k) {
 						convey_do_command(cmds[k]);
 					}
@@ -1514,7 +1551,7 @@ restart:
 			}
 
 			std::string cmds;
-			bytes = convey_filter_escape(buf, bytes, esc_pending, cmds);
+			bytes = convey_filter_escape(buf, bytes, esc_pending, cmds, conf.escape);
 			for (size_t k = 0; k < cmds.size(); ++k) {
 				convey_do_command(cmds[k]);
 			}
