@@ -131,6 +131,8 @@ While a session is running, press `Ctrl+A` followed by a command key:
 
 A BREAK on the serial console is how a Linux guest receives `Alt+SysRq` (see the Sysrq section below).
 
+In an interactive console `Ctrl+C` is passed through to the target. When there is no interactive console to type into (`--no-xterm`, redirected input or `--bridge`), `Ctrl+C` quits convey after restoring the console and closing the transport.
+
 
 # Debugging Linux kernel
 
