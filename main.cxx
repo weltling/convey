@@ -1080,6 +1080,31 @@ static bool convey_read_console(HANDLE h, char* buf, DWORD cap, DWORD* bytes)
 	return true;
 }/*}}}*/
 
+static void convey_quit(int code)
+{/*{{{*/
+	restart_on_exit = false;
+	convey_shutdown();
+	convey_final_cleanup();
+	ExitProcess(static_cast<UINT>(code));
+}/*}}}*/
+
+/* Turn a bare Ctrl+C/Ctrl+Break/console-close into an orderly shutdown so the
+ * console mode is restored and the transport and sockets are released. */
+static BOOL WINAPI convey_ctrl_handler(DWORD type)
+{/*{{{*/
+	switch (type) {
+	case CTRL_C_EVENT:
+	case CTRL_BREAK_EVENT:
+	case CTRL_CLOSE_EVENT:
+	case CTRL_LOGOFF_EVENT:
+	case CTRL_SHUTDOWN_EVENT:
+		convey_quit(0);
+		return TRUE;
+	default:
+		return FALSE;
+	}
+}/*}}}*/
+
 static void convey_do_command(char cmd)
 {/*{{{*/
 	switch (cmd) {
@@ -1087,10 +1112,7 @@ static void convey_do_command(char cmd)
 		if (conf.verbose) {
 			std::cout << std::endl << "convey: ctrl-a q, exit" << std::endl;
 		}
-		restart_on_exit = false;
-		convey_shutdown();
-		convey_final_cleanup();
-		ExitProcess(0);
+		convey_quit(0);
 		break;
 	case 'b':
 		if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
@@ -1114,6 +1136,8 @@ static convey_setup_status convey_startup(int argc, char **argv)
 	_setmode(_fileno(stdin), _O_BINARY);
 	_setmode(_fileno(stdout), _O_BINARY);
 	_setmode(_fileno(stderr), _O_BINARY);
+
+	SetConsoleCtrlHandler(convey_ctrl_handler, TRUE);
 
 	convey_setup_status rc = convey_conf_setup(argc, argv);
 	if (convey_setup_ok != rc) {
