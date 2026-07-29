@@ -283,6 +283,24 @@ int main()
 		EXPECT(run_setup({"convey", "--read-only", "COM1"}) == convey_setup_ok);
 		EXPECT(conf.read_only);
 	}
+	{
+		// convey_tcp_tune turns on NODELAY and keepalive on a data socket.
+		WSADATA wsa;
+		EXPECT(0 == WSAStartup(MAKEWORD(2, 2), &wsa));
+		SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		EXPECT(INVALID_SOCKET != s);
+		convey_tcp_tune(s);
+
+		int val = 0, len = sizeof val;
+		EXPECT(0 == getsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char*>(&val), &len));
+		EXPECT(0 != val);
+		val = 0; len = sizeof val;
+		EXPECT(0 == getsockopt(s, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<char*>(&val), &len));
+		EXPECT(0 != val);
+
+		closesocket(s);
+		WSACleanup();
+	}
 
 	if (g_fail) {
 		std::cerr << g_fail << " unit test(s) failed." << std::endl;
