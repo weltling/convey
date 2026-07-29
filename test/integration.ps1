@@ -245,6 +245,41 @@ function Test-TcpClientReconnect {
         $listener.Stop()
     }
 }
+
+function Test-ReconnectStatus {
+    # After a dropped connection convey reports the reconnect on stderr
+    $port = Get-FreePort
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+    $listener.Start()
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $Convey
+    $psi.Arguments = "tcp:127.0.0.1:$port --reconnect --no-xterm"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardError = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        $t1 = $listener.AcceptTcpClientAsync()
+        if (-not $t1.Wait(3000)) { Assert-Equal 'accepted' 'timeout' 'reconnect status: first connection'; return }
+        $c1 = $t1.Result
+        Start-Sleep -Milliseconds 200
+        $c1.Close()
+        $t2 = $listener.AcceptTcpClientAsync()
+        $ok = $t2.Wait(5000)
+        Assert-Equal $true $ok 'reconnect status: second connection accepted'
+        if ($ok) {
+            $c2 = $t2.Result
+            Start-Sleep -Milliseconds 300
+            $err = Read-Text $proc.StandardError.BaseStream 256 3000
+            Assert-Equal $true ($err -match 'reconnected') 'reconnect reported on stderr'
+            $c2.Close()
+        }
+    } finally {
+        if (-not $proc.HasExited) { $proc.Kill() }
+        $listener.Stop()
+    }
+}
 #endregion
 
 #region Console
@@ -542,6 +577,7 @@ $tests = @(
     'Test-TcpListenIPv6'
     'Test-Bridge'
     'Test-TcpClientReconnect'
+    'Test-ReconnectStatus'
     'Test-ReadOnly'
     'Test-Timestamps'
     'Test-Hex'

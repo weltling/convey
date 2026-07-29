@@ -308,6 +308,19 @@ int main()
 		EXPECT(run_setup({"convey", "--lf", "--crlf", "COM1"}) == convey_setup_exit_err);
 	}
 	{
+		// Backoff doubles the delay up to the cap.
+		EXPECT(convey_backoff_next(300, 5000) == 600);
+		EXPECT(convey_backoff_next(600, 5000) == 1200);
+		EXPECT(convey_backoff_next(3000, 5000) == 5000);
+		EXPECT(convey_backoff_next(5000, 5000) == 5000);
+		// --reconnect and --max-retries land in conf.
+		EXPECT(run_setup({"convey", "--reconnect", "tcp:127.0.0.1:9"}) == convey_setup_ok);
+		EXPECT(conf.reconnect);
+		EXPECT(conf.max_retries == 0);
+		EXPECT(run_setup({"convey", "--reconnect", "--max-retries", "5", "tcp:127.0.0.1:9"}) == convey_setup_ok);
+		EXPECT(conf.max_retries == 5);
+	}
+	{
 		// convey_tcp_tune turns on NODELAY and keepalive on a data socket.
 		WSADATA wsa;
 		EXPECT(0 == WSAStartup(MAKEWORD(2, 2), &wsa));
