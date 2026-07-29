@@ -166,7 +166,7 @@ int main()
 		bool esc = false;
 		std::string cmds;
 		char b[] = { 'h', 'i', 0x01, 'q', 'x' };
-		DWORD n = convey_filter_escape(b, 5, esc, cmds);
+		DWORD n = convey_filter_escape(b, 5, esc, cmds, 0x01);
 		EXPECT(n == 3);
 		EXPECT(b[0] == 'h' && b[1] == 'i' && b[2] == 'x');
 		EXPECT(cmds == "q");
@@ -177,15 +177,35 @@ int main()
 		bool esc = false;
 		std::string cmds;
 		char b1[] = { 'a', 0x01 };
-		DWORD n1 = convey_filter_escape(b1, 2, esc, cmds);
+		DWORD n1 = convey_filter_escape(b1, 2, esc, cmds, 0x01);
 		EXPECT(n1 == 1);
 		EXPECT(esc);
 		EXPECT(cmds.empty());
 		char b2[] = { 'q' };
-		DWORD n2 = convey_filter_escape(b2, 1, esc, cmds);
+		DWORD n2 = convey_filter_escape(b2, 1, esc, cmds, 0x01);
 		EXPECT(n2 == 0);
 		EXPECT(!esc);
 		EXPECT(cmds == "q");
+	}
+	{
+		// a custom escape byte is honored and the default 0x01 passes through
+		bool esc = false;
+		std::string cmds;
+		char b[] = { 'a', 0x1d, 'q', 0x01 };
+		DWORD n = convey_filter_escape(b, 4, esc, cmds, 0x1d);
+		EXPECT(n == 2);
+		EXPECT(b[0] == 'a' && b[1] == 0x01);
+		EXPECT(cmds == "q");
+		// escape key specs parse to control bytes, invalid ones rejected
+		EXPECT(convey_parse_escape("^A") == 0x01);
+		EXPECT(convey_parse_escape("ctrl-]") == 0x1d);
+		EXPECT(convey_parse_escape("C-a") == 0x01);
+		EXPECT(convey_parse_escape("nope") == -1);
+		EXPECT(run_setup({"convey", "--escape", "^]", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.escape == 0x1d);
+		EXPECT(run_setup({"convey", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.escape == 0x01);
+		EXPECT(run_setup({"convey", "--escape", "bogus", "COM1"}) == convey_setup_exit_err);
 	}
 
 	// --- convey_conf_setup: parser functional-equivalence coverage ---

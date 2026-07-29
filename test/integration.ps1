@@ -393,6 +393,29 @@ function Test-CtrlAQuit {
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
 
+function Test-CustomEscape {
+    # --escape remaps the command prefix; here ctrl-] q quits convey
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](0x1d, 0x71))
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--escape", "^]" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $exited = $p.WaitForExit(3000)
+        Assert-Equal $true $exited 'custom escape quits convey'
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
+
 function Test-CtrlABreak {
     # ctrl-a b over a non-serial transport reports that break needs a serial port
     $port = Get-FreePort
@@ -582,6 +605,7 @@ $tests = @(
     'Test-Timestamps'
     'Test-Hex'
     'Test-CtrlAQuit'
+    'Test-CustomEscape'
     'Test-CtrlABreak'
     'Test-CtrlCClean'
     'Test-LineEndings'
