@@ -97,6 +97,13 @@ enum convey_eol {
 	convey_eol_crlf
 };
 
+enum convey_line {
+	convey_line_keep,
+	convey_line_on,
+	convey_line_off,
+	convey_line_pulse
+};
+
 struct convey_transport_spec {
 	convey_transport kind;
 	std::string host;
@@ -179,6 +186,8 @@ struct convey_conf {
 	convey_eol eol;
 	bool reconnect;
 	uint32_t max_retries;
+	convey_line dtr;
+	convey_line rts;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -338,6 +347,21 @@ static convey_flow_control convey_flow_control_from_string(std::string p)
 	return ((convey_flow_control)-1);
 }
 
+static convey_line convey_line_from_string(std::string p)
+{
+	for (size_t i = 0; i < p.size(); i++) {
+		p[i] = std::tolower(p[i]);
+	}
+	if (!p.compare("on")) {
+		return convey_line_on;
+	} else if (!p.compare("off")) {
+		return convey_line_off;
+	} else if (!p.compare("pulse")) {
+		return convey_line_pulse;
+	}
+	return ((convey_line)-1);
+}
+
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	CLI::App app{"IPC through a named pipe, a serial port or a TCP endpoint.", "convey"};
@@ -353,6 +377,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string dev;
 	std::string log_path, log_recv_path, log_send_path, pipe_server;
 	std::string parity = "no", stop_bits = "1", flow_control = "none";
+	std::string dtr_arg, rts_arg;
 	uint32_t baud = CBR_115200, byte_size = 8;
 	double poll = 0.0;
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
@@ -372,6 +397,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("--parity", parity, "Parity scheme (even, mark, no, odd, space).")->group("Serial")->capture_default_str()->type_name("SCHEME");
 	app.add_option("--stop-bits", stop_bits, "Stop bits (1, 1.5, 2).")->group("Serial")->capture_default_str()->type_name("BITS");
 	app.add_option("--flow-control", flow_control, "Flow control (none, xon/xoff, rts/cts, dsr/dtr).")->group("Serial")->capture_default_str()->type_name("MODE");
+	app.add_option("--dtr", dtr_arg, "Set the serial DTR line (on, off, pulse).")->group("Serial")->type_name("STATE");
+	app.add_option("--rts", rts_arg, "Set the serial RTS line (on, off, pulse).")->group("Serial")->type_name("STATE");
 
 	app.add_flag("--bridge", bridge, "Bridge mode: pump raw bytes between a pipe server and the endpoint.")->group("Bridge");
 	app.add_option("--pipe-server", pipe_server, "Create a named pipe server with this name (bridge mode).")->group("Bridge")->type_name("NAME");
@@ -473,6 +500,23 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.flow_control = fc;
 
 	conf.byte_size = byte_size;
+
+	conf.dtr = convey_line_keep;
+	if (!dtr_arg.empty()) {
+		conf.dtr = convey_line_from_string(dtr_arg);
+		if (((convey_line)-1) == conf.dtr) {
+			std::cerr << "convey: unsupported dtr state '" << dtr_arg << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+	}
+	conf.rts = convey_line_keep;
+	if (!rts_arg.empty()) {
+		conf.rts = convey_line_from_string(rts_arg);
+		if (((convey_line)-1) == conf.rts) {
+			std::cerr << "convey: unsupported rts state '" << rts_arg << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+	}
 
 	if (reconnect) {
 		restart_on_exit = true;
@@ -814,6 +858,31 @@ static size_t convey_backoff_next(size_t step, size_t cap)
 	return n > cap ? cap : n;
 }/*}}}*/
 
+static void convey_set_line(HANDLE h, bool dtr, bool on)
+{/*{{{*/
+	EscapeCommFunction(h, dtr ? (on ? SETDTR : CLRDTR) : (on ? SETRTS : CLRRTS));
+}/*}}}*/
+
+// Apply a DTR/RTS action; pulse briefly de-asserts the line then re-asserts it.
+static void convey_apply_line(HANDLE h, bool dtr, convey_line action)
+{/*{{{*/
+	switch (action) {
+	case convey_line_on:
+		convey_set_line(h, dtr, true);
+		break;
+	case convey_line_off:
+		convey_set_line(h, dtr, false);
+		break;
+	case convey_line_pulse:
+		convey_set_line(h, dtr, false);
+		std::this_thread::sleep_for(std::chrono::milliseconds(120));
+		convey_set_line(h, dtr, true);
+		break;
+	default:
+		break;
+	}
+}/*}}}*/
+
 static convey_setup_status convey_connect(int argc, char **argv)
 {/*{{{*/
 	DWORD rc;
@@ -939,6 +1008,13 @@ static convey_setup_status convey_connect(int argc, char **argv)
 		if (!SetCommTimeouts(pipe, &timeouts)) {
 			convey_error();
 			return convey_setup_exit_err;
+		}
+
+		if (convey_line_keep != conf.dtr) {
+			convey_apply_line(pipe, true, conf.dtr);
+		}
+		if (convey_line_keep != conf.rts) {
+			convey_apply_line(pipe, false, conf.rts);
 		}
 	}
 
@@ -1224,6 +1300,16 @@ static void convey_do_command(char cmd)
 			}
 		} else {
 			std::cerr << std::endl << "convey: break is only supported on a serial port" << std::endl;
+		}
+		break;
+	case 'r':
+		if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
+			convey_apply_line(pipe, true, convey_line_pulse);
+			if (conf.verbose) {
+				std::cout << std::endl << "convey: ctrl-a r, dtr reset pulse" << std::endl;
+			}
+		} else {
+			std::cerr << std::endl << "convey: line control is only supported on a serial port" << std::endl;
 		}
 		break;
 	default:
