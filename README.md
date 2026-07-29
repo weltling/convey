@@ -79,6 +79,8 @@ Besides named pipes and COM ports, convey can also communicate over a TCP connec
 
 The `--poll` and `--reconnect` options work here too. `--poll` keeps retrying the connection on startup, `--reconnect` re-establishes it after a drop.
 
+TCP connections are opened with `TCP_NODELAY` for low latency and with keepalive probes (after 30 s idle, then every 5 s), so a silently dropped peer is detected in about a minute instead of hanging. Both IPv4 and IPv6 are supported.
+
 ## Windows kernel debugging with WinDbg
 
 This targets a Windows guest whose serial port is available on TCP, as done by QEMU, cloud-hypervisor and others. The bridge mode lets WinDbg reach such a serial-over-TCP target through a named pipe, without any third-party virtual COM driver. Convey creates the pipe server and pumps raw bytes between it and the TCP endpoint.
