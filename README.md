@@ -148,8 +148,11 @@ While a session is running, press `Ctrl+A` followed by a command key:
 
 - `q` quits convey.
 - `b` sends a serial BREAK. It is held for about 300 ms and only works on a physical COM port; on a named pipe or TCP connection convey reports that break needs a serial port.
+- `r` sends a reset pulse on the serial DTR line: it de-asserts DTR for about 120 ms, then re-asserts it, which resets many boards. It works only on a physical COM port.
 
 A BREAK on the serial console is how a Linux guest receives `Alt+SysRq` (see the Sysrq section below).
+
+The `--dtr` and `--rts` options set those serial control lines when the port is opened, each taking `on`, `off` or `pulse`. A `pulse` de-asserts the line for about 120 ms and then re-asserts it, the same reset pulse `Ctrl+A r` sends for DTR.
 
 In an interactive console `Ctrl+C` is passed through to the target. When there is no interactive console to type into (`--no-xterm`, redirected input or `--bridge`), `Ctrl+C` quits convey after restoring the console and closing the transport.
 
