@@ -124,6 +124,17 @@ Pass `--hex` to show the received stream as a hex dump instead of text, in the f
 For example, `convey.exe --hex tcp:10.0.0.5:4445`.
 
 
+# Line endings
+
+By default convey sends what you type unchanged, except that `--no-xterm` drops the trailing line feed so a serial console sees a bare carriage return on Enter. Three options make the outgoing translation explicit and override that default:
+
+- `--raw` sends input with no newline translation.
+- `--lf` translates sent CRLF newlines to LF.
+- `--crlf` translates sent LF newlines to CRLF.
+
+Only the host-to-endpoint direction is affected; received bytes and the log files stay raw.
+
+
 # Commands
 
 While a session is running, press `Ctrl+A` followed by a command key:
