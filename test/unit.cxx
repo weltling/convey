@@ -321,6 +321,20 @@ int main()
 		EXPECT(conf.max_retries == 5);
 	}
 	{
+		// DTR/RTS states parse, and invalid ones are rejected.
+		EXPECT(convey_line_from_string("on") == convey_line_on);
+		EXPECT(convey_line_from_string("off") == convey_line_off);
+		EXPECT(convey_line_from_string("pulse") == convey_line_pulse);
+		EXPECT(convey_line_from_string("bogus") == (convey_line)-1);
+		EXPECT(run_setup({"convey", "--dtr", "on", "--rts", "pulse", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.dtr == convey_line_on);
+		EXPECT(conf.rts == convey_line_pulse);
+		EXPECT(run_setup({"convey", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.dtr == convey_line_keep);
+		EXPECT(conf.rts == convey_line_keep);
+		EXPECT(run_setup({"convey", "--dtr", "bogus", "COM1"}) == convey_setup_exit_err);
+	}
+	{
 		// convey_tcp_tune turns on NODELAY and keepalive on a data socket.
 		WSADATA wsa;
 		EXPECT(0 == WSAStartup(MAKEWORD(2, 2), &wsa));
