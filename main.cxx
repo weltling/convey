@@ -31,6 +31,7 @@
 #define NOMINMAX
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
 #include <windows.h>
 #include <conio.h>
 #include <fcntl.h>
@@ -636,6 +637,25 @@ static bool convey_open_log(const std::string& path, HANDLE& h)
 	return INVALID_HANDLE_VALUE != h;
 }/*}}}*/
 
+/* Low latency plus dead-peer detection for a serial-over-TCP data socket. */
+static void convey_tcp_tune(SOCKET s)
+{/*{{{*/
+	BOOL nodelay = TRUE;
+	setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof nodelay);
+
+	BOOL keepalive = TRUE;
+	setsockopt(s, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const char *>(&keepalive), sizeof keepalive);
+
+	/* Probe after 30 s idle, then every 5 s, so a dropped peer is seen in
+	 * about a minute instead of the two-hour default. */
+	struct tcp_keepalive ka;
+	ka.onoff = 1;
+	ka.keepalivetime = 30000;
+	ka.keepaliveinterval = 5000;
+	DWORD ret = 0;
+	WSAIoctl(s, SIO_KEEPALIVE_VALS, &ka, sizeof ka, nullptr, 0, &ret, nullptr, nullptr);
+}/*}}}*/
+
 static SOCKET convey_tcp_connect(const std::string& host, const std::string& port, DWORD& err)
 {/*{{{*/
 	struct addrinfo hints;
@@ -668,8 +688,7 @@ static SOCKET convey_tcp_connect(const std::string& host, const std::string& por
 	freeaddrinfo(res);
 
 	if (INVALID_SOCKET != s) {
-		BOOL nodelay = TRUE;
-		setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof nodelay);
+		convey_tcp_tune(s);
 	}
 
 	return s;
@@ -729,8 +748,7 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 		return INVALID_SOCKET;
 	}
 
-	BOOL nodelay = TRUE;
-	setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char *>(&nodelay), sizeof nodelay);
+	convey_tcp_tune(s);
 
 	return s;
 }/*}}}*/
