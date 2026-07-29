@@ -154,6 +154,8 @@ A BREAK on the serial console is how a Linux guest receives `Alt+SysRq` (see the
 
 The `--dtr` and `--rts` options set those serial control lines when the port is opened, each taking `on`, `off` or `pulse`. A `pulse` de-asserts the line for about 120 ms and then re-asserts it, the same reset pulse `Ctrl+A r` sends for DTR.
 
+The command prefix defaults to `Ctrl+A` and can be changed with `--escape`, which accepts a control-key spec such as `^]`, `ctrl-]` or `C-x`. This helps when `Ctrl+A` collides with a shell or readline binding.
+
 In an interactive console `Ctrl+C` is passed through to the target. When there is no interactive console to type into (`--no-xterm`, redirected input or `--bridge`), `Ctrl+C` quits convey after restoring the console and closing the transport.
 
 
