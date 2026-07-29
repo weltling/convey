@@ -46,6 +46,55 @@ function Read-Text($stream, $count, $ms) {
     if (-not $task.Wait($ms)) { return $null }
     return [System.Text.Encoding]::ASCII.GetString($buf, 0, $task.Result)
 }
+
+# Native helper: launch convey in its own process group and deliver a targeted
+# Ctrl+Break, so only convey receives it and never the test runner.
+if (-not ([System.Management.Automation.PSTypeName]'ConveyCtrl').Type) {
+    Add-Type -Namespace Convey -Name Ctrl -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)]
+struct STARTUPINFO {
+    public int cb; public string lpReserved, lpDesktop, lpTitle;
+    public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+    public short wShowWindow, cbReserved2; public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+}
+[StructLayout(LayoutKind.Sequential)]
+struct PROCESS_INFORMATION { public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId; }
+[StructLayout(LayoutKind.Sequential)]
+struct SECURITY_ATTRIBUTES { public int nLength; public IntPtr lpSecurityDescriptor; public bool bInheritHandle; }
+
+[DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+static extern bool CreateProcess(string app, string cmd, IntPtr pa, IntPtr ta, bool inherit, uint flags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
+[DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+static extern IntPtr CreateFile(string name, uint access, uint share, ref SECURITY_ATTRIBUTES sa, uint disp, uint flags, IntPtr tmpl);
+[DllImport("kernel32.dll", SetLastError=true)] static extern bool GenerateConsoleCtrlEvent(uint ev, uint pgid);
+[DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr h, uint ms);
+[DllImport("kernel32.dll", SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr h, out uint code);
+[DllImport("kernel32.dll", SetLastError=true)] static extern bool CloseHandle(IntPtr h);
+[DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateProcess(IntPtr h, uint code);
+
+public static int RunBreakExit(string app, string cmdline, string outFile, int startupMs, int waitMs)
+{
+    var sa = new SECURITY_ATTRIBUTES(); sa.nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)); sa.bInheritHandle = true;
+    IntPtr hNul = CreateFile("NUL", 0x80000000, 3, ref sa, 3, 0, IntPtr.Zero);
+    IntPtr hOut = CreateFile(outFile, 0x40000000, 3, ref sa, 2, 0, IntPtr.Zero);
+    var si = new STARTUPINFO(); si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+    si.dwFlags = 0x100; si.hStdInput = hNul; si.hStdOutput = hOut; si.hStdError = hOut;
+    PROCESS_INFORMATION pi;
+    string full = "\"" + app + "\" " + cmdline;
+    bool ok = CreateProcess(null, full, IntPtr.Zero, IntPtr.Zero, true, 0x200, IntPtr.Zero, null, ref si, out pi);
+    CloseHandle(hNul); CloseHandle(hOut);
+    if (!ok) return -2;
+    System.Threading.Thread.Sleep(startupMs);
+    GenerateConsoleCtrlEvent(1, (uint)pi.dwProcessId);
+    uint w = WaitForSingleObject(pi.hProcess, (uint)waitMs);
+    int result;
+    if (0 == w) { uint code; GetExitCodeProcess(pi.hProcess, out code); result = (int)code; }
+    else { TerminateProcess(pi.hProcess, 1); result = -1; }
+    CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    return result;
+}
+'@
+}
 #endregion
 
 #region TCP transport
@@ -333,6 +382,15 @@ function Test-CtrlABreak {
     Assert-Equal $true ($err -match 'break is only supported on a serial port') 'ctrl-a b needs a serial port'
     Remove-Item $inFile, $errFile -ErrorAction SilentlyContinue
 }
+
+function Test-CtrlCClean {
+    # Ctrl+Break in a non-interactive session exits convey cleanly (exit code 0)
+    $port = Get-FreePort
+    $errFile = [System.IO.Path]::GetTempFileName()
+    $code = [Convey.Ctrl]::RunBreakExit($Convey, "tcp-listen:$port --no-xterm", $errFile, 700, 4000)
+    Assert-Equal 0 $code 'ctrl+break exits convey cleanly'
+    Remove-Item $errFile -ErrorAction SilentlyContinue
+}
 #endregion
 
 #region Logging
@@ -452,6 +510,7 @@ $tests = @(
     'Test-Hex'
     'Test-CtrlAQuit'
     'Test-CtrlABreak'
+    'Test-CtrlCClean'
     'Test-LogRecv'
     'Test-LogSend'
     'Test-LogConflict'
