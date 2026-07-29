@@ -391,6 +391,43 @@ function Test-CtrlCClean {
     Assert-Equal 0 $code 'ctrl+break exits convey cleanly'
     Remove-Item $errFile -ErrorAction SilentlyContinue
 }
+
+function Test-LineEndings {
+    # --crlf sends a lone LF as CRLF; --lf sends CRLF as LF
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](0x78, 0x0A))
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--crlf" `
+        -RedirectStandardInput $inFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $got = Read-Text $client.GetStream() 8 2000
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Assert-Equal "x`r`n" $got '--crlf sends a lone LF as CRLF'
+
+    $port = Get-FreePort
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](0x79, 0x0D, 0x0A))
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--lf" `
+        -RedirectStandardInput $inFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $got = Read-Text $client.GetStream() 8 2000
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Assert-Equal "y`n" $got '--lf sends CRLF as LF'
+    Remove-Item $inFile -ErrorAction SilentlyContinue
+}
 #endregion
 
 #region Logging
@@ -511,6 +548,7 @@ $tests = @(
     'Test-CtrlAQuit'
     'Test-CtrlABreak'
     'Test-CtrlCClean'
+    'Test-LineEndings'
     'Test-LogRecv'
     'Test-LogSend'
     'Test-LogConflict'

@@ -284,6 +284,30 @@ int main()
 		EXPECT(conf.read_only);
 	}
 	{
+		// eol auto: raw with xterm, drop the trailing LF (keep CR) with --no-xterm.
+		EXPECT(convey_encode_eol("a\r\nb", 4, convey_eol_auto, false) == std::string("a\r\nb", 4));
+		EXPECT(convey_encode_eol("a\r\n", 3, convey_eol_auto, true) == std::string("a\r", 2));
+		EXPECT(convey_encode_eol("a\r\nb\r\n", 6, convey_eol_auto, true) == std::string("a\r\nb\r", 5));
+		// raw sends bytes unchanged even with --no-xterm.
+		EXPECT(convey_encode_eol("a\r\n", 3, convey_eol_raw, true) == std::string("a\r\n", 3));
+		// lf converts every CRLF to LF and leaves a lone CR alone.
+		EXPECT(convey_encode_eol("a\r\nb\r\n", 6, convey_eol_lf, false) == std::string("a\nb\n", 4));
+		EXPECT(convey_encode_eol("a\rb", 3, convey_eol_lf, false) == std::string("a\rb", 3));
+		// crlf adds CR to a lone LF and never doubles an existing CRLF.
+		EXPECT(convey_encode_eol("a\nb\r\n", 5, convey_eol_crlf, false) == std::string("a\r\nb\r\n", 6));
+		EXPECT(convey_encode_eol("a\r\n", 3, convey_eol_crlf, false) == std::string("a\r\n", 3));
+	}
+	{
+		// The newline flags are mutually exclusive.
+		EXPECT(run_setup({"convey", "--lf", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.eol == convey_eol_lf);
+		EXPECT(run_setup({"convey", "--crlf", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.eol == convey_eol_crlf);
+		EXPECT(run_setup({"convey", "--raw", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.eol == convey_eol_raw);
+		EXPECT(run_setup({"convey", "--lf", "--crlf", "COM1"}) == convey_setup_exit_err);
+	}
+	{
 		// convey_tcp_tune turns on NODELAY and keepalive on a data socket.
 		WSADATA wsa;
 		EXPECT(0 == WSAStartup(MAKEWORD(2, 2), &wsa));
