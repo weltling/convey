@@ -135,6 +135,13 @@ By default convey sends what you type unchanged, except that `--no-xterm` drops 
 Only the host-to-endpoint direction is affected; received bytes and the log files stay raw.
 
 
+# Reconnecting
+
+With `--reconnect` convey re-establishes the connection after it drops and resumes the session. Retries use an exponential backoff that starts at 300 ms and doubles up to 5 s between attempts, and convey prints `reconnecting...` and `reconnected` on stderr so the status stays visible without disturbing the data on stdout. By default it retries indefinitely; `--max-retries N` gives up after N attempts.
+
+The related `--poll` option keeps retrying the initial connection for the given number of seconds before the session begins.
+
+
 # Commands
 
 While a session is running, press `Ctrl+A` followed by a command key:
