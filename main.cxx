@@ -67,6 +67,7 @@ static bool is_console{false},
 static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 static bool restart_on_exit = false;
+static bool is_reconnect = false;
 static SOCKET listen_sock{INVALID_SOCKET};
 static HANDLE stdin_thread{INVALID_HANDLE_VALUE};
 static HANDLE log_handle{INVALID_HANDLE_VALUE};
@@ -176,6 +177,8 @@ struct convey_conf {
 	bool timestamps;
 	bool hex;
 	convey_eol eol;
+	bool reconnect;
+	uint32_t max_retries;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -354,6 +357,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	double poll = 0.0;
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
 	bool eol_raw = false, eol_lf = false, eol_crlf = false;
+	uint32_t max_retries = 0;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -361,6 +365,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("-d,--dev", dev, "Path to the named pipe or COM device.")->group("Connection")->type_name("PATH");
 	app.add_option("-p,--poll", poll, "Poll pipe for N seconds on startup.")->group("Connection")->capture_default_str()->type_name("SECONDS");
 	app.add_flag("--reconnect", reconnect, "Try to reconnect after connection loss.")->group("Connection");
+	app.add_option("--max-retries", max_retries, "Give up reconnecting after N attempts (0 = unlimited).")->group("Connection")->capture_default_str()->type_name("N");
 
 	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
@@ -437,6 +442,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.timestamps = timestamps;
 	conf.hex = hex;
 	conf.eol = eol_crlf ? convey_eol_crlf : eol_lf ? convey_eol_lf : eol_raw ? convey_eol_raw : convey_eol_auto;
+	conf.reconnect = reconnect;
+	conf.max_retries = max_retries;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -800,6 +807,13 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 	return s;
 }/*}}}*/
 
+// Next backoff delay in ms: double the step, clamped to the cap.
+static size_t convey_backoff_next(size_t step, size_t cap)
+{/*{{{*/
+	size_t n = step * 2;
+	return n > cap ? cap : n;
+}/*}}}*/
+
 static convey_setup_status convey_connect(int argc, char **argv)
 {/*{{{*/
 	DWORD rc;
@@ -815,8 +829,10 @@ static convey_setup_status convey_connect(int argc, char **argv)
 		std::cout << "Polling the pipe '" << conf.pipe_path << "' for " << conf.pipe_poll << " seconds" << std::endl;
 	}
 	size_t elapsed = 0,
-		   step = 300 /* milliseconds*/;
-	bool conn_error;
+		   step = 300 /* milliseconds*/,
+		   step_cap = 5000,
+		   attempts = 0;
+	bool conn_error, announced = false;
 	do {
 		if (convey_tp_tcp_client == conf.transport) {
 			SOCKET s = convey_tcp_connect(conf.tcp_host, conf.tcp_port, rc);
@@ -831,19 +847,38 @@ static convey_setup_status convey_connect(int argc, char **argv)
 			rc = GetLastError();
 			conn_error = INVALID_HANDLE_VALUE == pipe || ERROR_PIPE_BUSY == rc || ERROR_FILE_NOT_FOUND == rc;
 		}
-		if (conn_error) {
-			if (elapsed/1000 < conf.pipe_poll) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(step));
-				elapsed += step;
-				continue;
-			}
+		if (!conn_error || shutting_down) {
+			break;
 		}
-		break;
+
+		/* On a post-drop reconnect keep retrying with exponential backoff,
+		 * bounded by --max-retries; the initial connect stays within the
+		 * --poll window. */
+		bool retry;
+		if (is_reconnect && conf.reconnect) {
+			++attempts;
+			retry = 0 == conf.max_retries || attempts < conf.max_retries;
+		} else {
+			retry = elapsed/1000 < conf.pipe_poll;
+		}
+		if (!retry) {
+			break;
+		}
+		if (is_reconnect && !announced) {
+			std::cerr << "convey: reconnecting..." << std::endl;
+			announced = true;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(step));
+		elapsed += step;
+		step = convey_backoff_next(step, step_cap);
 	} while (true);
 	if (conn_error) {
 		convey_error(rc);
 		restart_on_exit = false;
 		return convey_setup_exit_err;
+	}
+	if (is_reconnect) {
+		std::cerr << "convey: reconnected" << std::endl;
 	}
 	if (conf.verbose) {
 		std::cout << "Connection established in " << (elapsed/1000) << " seconds" << std::endl;
@@ -1357,6 +1392,7 @@ restart:
 		if (restart_on_exit) {
 			is_error = false;
 			shutting_down = false;
+			is_reconnect = true;
 			goto restart;
 		}
 
@@ -1487,6 +1523,7 @@ restart:
 	if (restart_on_exit) {
 		is_error = false;
 		shutting_down = false;
+		is_reconnect = true;
 		goto restart;
 	}
 
