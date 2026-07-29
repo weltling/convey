@@ -89,6 +89,13 @@ enum convey_transport {
 	convey_tp_tcp_server
 };
 
+enum convey_eol {
+	convey_eol_auto,
+	convey_eol_raw,
+	convey_eol_lf,
+	convey_eol_crlf
+};
+
 struct convey_transport_spec {
 	convey_transport kind;
 	std::string host;
@@ -130,12 +137,45 @@ static DWORD convey_trim_crlf(const char* buf, DWORD bytes)
 	return bytes;
 }/*}}}*/
 
+/* Re-encode the outgoing newlines per the chosen policy. In auto mode the
+ * historical behavior is kept: raw with xterm, trailing CRLF trimmed to LF
+ * with --no-xterm. */
+static std::string convey_encode_eol(const char* buf, DWORD bytes, convey_eol mode, bool no_xterm)
+{/*{{{*/
+	if (convey_eol_auto == mode) {
+		DWORD n = no_xterm ? convey_trim_crlf(buf, bytes) : bytes;
+		return std::string(buf, buf + n);
+	}
+
+	std::string out;
+	out.reserve(bytes);
+	if (convey_eol_crlf == mode) {
+		for (DWORD i = 0; i < bytes; ++i) {
+			if ('\n' == buf[i] && (0 == i || '\r' != buf[i - 1])) {
+				out.push_back('\r');
+			}
+			out.push_back(buf[i]);
+		}
+	} else if (convey_eol_lf == mode) {
+		for (DWORD i = 0; i < bytes; ++i) {
+			if ('\r' == buf[i] && i + 1 < bytes && '\n' == buf[i + 1]) {
+				continue;
+			}
+			out.push_back(buf[i]);
+		}
+	} else {
+		out.assign(buf, buf + bytes);
+	}
+	return out;
+}/*}}}*/
+
 struct convey_conf {
 	bool verbose;
 	bool no_xterm;
 	bool read_only;
 	bool timestamps;
 	bool hex;
+	convey_eol eol;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -313,6 +353,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	uint32_t baud = CBR_115200, byte_size = 8;
 	double poll = 0.0;
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
+	bool eol_raw = false, eol_lf = false, eol_crlf = false;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -339,6 +380,11 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--read-only", read_only, "Monitor only and do not send anything to the endpoint.")->group("General");
 	app.add_flag("--timestamps", timestamps, "Prefix each received line with a local time stamp.")->group("General");
 	app.add_flag("--hex", hex, "Show the received stream as a hex dump instead of text.")->group("General");
+	auto* opt_raw = app.add_flag("--raw", eol_raw, "Send input with no newline translation.")->group("General");
+	auto* opt_lf = app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF.")->group("General");
+	auto* opt_crlf = app.add_flag("--crlf", eol_crlf, "Translate sent LF newlines to CRLF.")->group("General");
+	opt_raw->excludes(opt_lf)->excludes(opt_crlf);
+	opt_lf->excludes(opt_crlf);
 	app.set_help_flag("-h,--help", "Display this help message and exit.")->group("General");
 	app.set_version_flag("-V,--version", std::string(VERSION), "Output version information and exit.")->group("General");
 	app.add_flag("-v,--verbose", verbose, "Print some additional messages.")->group("General");
@@ -390,6 +436,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.read_only = read_only;
 	conf.timestamps = timestamps;
 	conf.hex = hex;
+	conf.eol = eol_crlf ? convey_eol_crlf : eol_lf ? convey_eol_lf : eol_raw ? convey_eol_raw : convey_eol_auto;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1192,12 +1239,10 @@ static convey_setup_status convey_startup(int argc, char **argv)
 					}
 
 					if (bytes && !conf.read_only && INVALID_HANDLE_VALUE != pipe) {
-						if (conf.no_xterm) {
-							bytes = convey_trim_crlf(buf, bytes);
-						}
-						convey_log_sent(buf, bytes);
-						DWORD w = bytes;
-						convey_write_pipe(pipe, buf, &w, e_pipe_w, er);
+						std::string s = convey_encode_eol(buf, bytes, conf.eol, conf.no_xterm);
+						convey_log_sent(s.data(), static_cast<DWORD>(s.size()));
+						DWORD w = static_cast<DWORD>(s.size());
+						convey_write_pipe(pipe, s.data(), &w, e_pipe_w, er);
 					} else if (0 == bytes) {
 						std::this_thread::sleep_for(std::chrono::milliseconds(3));
 					}
@@ -1353,12 +1398,10 @@ restart:
 			}
 
 			if (bytes && !conf.read_only) {
-				if (conf.no_xterm) {
-					bytes = convey_trim_crlf(buf, bytes);
-				}
-
-				convey_log_sent(buf, bytes);
-				rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
+				std::string s = convey_encode_eol(buf, bytes, conf.eol, conf.no_xterm);
+				DWORD w = static_cast<DWORD>(s.size());
+				convey_log_sent(s.data(), w);
+				rc = convey_write_pipe(pipe, s.data(), &w, e_pipe_w, er);
 				if (!rc) {
 					if (!is_error) {
 						convey_error(er);
