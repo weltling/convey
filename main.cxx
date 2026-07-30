@@ -66,6 +66,7 @@ static bool is_console{false},
 			out_is_pipe{false};
 static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
+static std::atomic<bool> hex_on{false};
 static bool restart_on_exit = false;
 static bool is_reconnect = false;
 static SOCKET listen_sock{INVALID_SOCKET};
@@ -495,6 +496,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.read_only = read_only;
 	conf.timestamps = timestamps;
 	conf.hex = hex;
+	hex_on = hex;
 	conf.eol = eol_crlf ? convey_eol_crlf : eol_lf ? convey_eol_lf : eol_raw ? convey_eol_raw : convey_eol_auto;
 	conf.reconnect = reconnect;
 	conf.max_retries = max_retries;
@@ -971,7 +973,7 @@ static convey_setup_status convey_connect(int argc, char **argv)
 			break;
 		}
 		if (is_reconnect && !announced) {
-			std::cerr << "convey: reconnecting..." << std::endl;
+			std::cerr << "convey: reconnecting...\r\n";
 			announced = true;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(step));
@@ -984,7 +986,7 @@ static convey_setup_status convey_connect(int argc, char **argv)
 		return convey_setup_exit_err;
 	}
 	if (is_reconnect) {
-		std::cerr << "convey: reconnected" << std::endl;
+		std::cerr << "convey: reconnected\r\n";
 	}
 	if (conf.verbose) {
 		std::cout << "Connection established in " << (elapsed/1000) << " seconds" << std::endl;
@@ -1323,7 +1325,7 @@ static void convey_do_command(char cmd)
 	switch (cmd) {
 	case 'q':
 		if (conf.verbose) {
-			std::cout << std::endl << "convey: ctrl-a q, exit" << std::endl;
+			std::cout << "\r\nconvey: ctrl-a q, exit\r\n" << std::flush;
 		}
 		convey_quit(0);
 		break;
@@ -1333,21 +1335,54 @@ static void convey_do_command(char cmd)
 			std::this_thread::sleep_for(std::chrono::milliseconds(300));
 			ClearCommBreak(pipe);
 			if (conf.verbose) {
-				std::cout << std::endl << "convey: ctrl-a b, break sent" << std::endl;
+				std::cout << "\r\nconvey: ctrl-a b, break sent\r\n" << std::flush;
 			}
 		} else {
-			std::cerr << std::endl << "convey: break is only supported on a serial port" << std::endl;
+			std::cerr << "\r\nconvey: break is only supported on a serial port\r\n";
 		}
 		break;
 	case 'r':
 		if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
 			convey_apply_line(pipe, true, convey_line_pulse);
 			if (conf.verbose) {
-				std::cout << std::endl << "convey: ctrl-a r, dtr reset pulse" << std::endl;
+				std::cout << "\r\nconvey: ctrl-a r, dtr reset pulse\r\n" << std::flush;
 			}
 		} else {
-			std::cerr << std::endl << "convey: line control is only supported on a serial port" << std::endl;
+			std::cerr << "\r\nconvey: line control is only supported on a serial port\r\n";
 		}
+		break;
+	case 'h':
+		hex_on = !hex_on;
+		std::cout << "\r\nconvey: hex " << (hex_on ? "on" : "off") << "\r\n" << std::flush;
+		break;
+	case 'c':
+		if (is_console && !conf.no_xterm) {
+			std::cout << "\x1b[2J\x1b[3J\x1b[H" << std::flush;
+		}
+		break;
+	case '.': {
+		const char* tp = "pipe";
+		if (convey_transport_is_tcp()) {
+			tp = "tcp";
+		} else if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
+			tp = "serial";
+		}
+		std::cout << "\r\nconvey: " << tp << " " << conf.pipe_path << ", "
+			<< (INVALID_HANDLE_VALUE == pipe ? "disconnected" : "connected")
+			<< ", hex " << (hex_on ? "on" : "off")
+			<< ", read-only " << (conf.read_only ? "on" : "off") << "\r\n" << std::flush;
+		break;
+	}
+	case '?':
+		std::cout << "\r\n"
+			"convey commands (after the escape key):\r\n"
+			"  q  quit\r\n"
+			"  b  send a serial BREAK\r\n"
+			"  r  pulse the serial DTR line to reset\r\n"
+			"  h  toggle the hex view\r\n"
+			"  c  clear the screen\r\n"
+			"  .  show connection status\r\n"
+			"  ?  show this help\r\n" << std::flush;
 		break;
 	default:
 		break;
@@ -1606,7 +1641,7 @@ restart:
 				const char* wbuf = buf;
 				DWORD wbytes = bytes;
 				std::string hexbuf, tsbuf;
-				if (conf.hex) {
+				if (hex_on) {
 					static size_t hex_offset = 0;
 					convey_hexdump(wbuf, wbytes, hex_offset, hexbuf);
 					wbuf = hexbuf.data();
