@@ -98,6 +98,17 @@ public static int RunBreakExit(string app, string cmdline, string outFile, int s
 #endregion
 
 #region TCP transport
+function Test-ListPorts {
+    # --list-serial-ports enumerates serial ports (or reports none) and exits cleanly
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $p = Start-Process -FilePath $Convey -ArgumentList "--list-serial-ports" `
+        -RedirectStandardOutput $outFile -PassThru -NoNewWindow -Wait
+    $out = [System.IO.File]::ReadAllText($outFile)
+    Assert-Equal 0 $p.ExitCode '--list-serial-ports exits cleanly'
+    Assert-Equal $true ($out -match 'COM\d+|No serial ports found') '--list-serial-ports prints ports or a notice'
+    Remove-Item $outFile -ErrorAction SilentlyContinue
+}
+
 function Test-TcpListenRoundTrip {
     $port = Get-FreePort
     $toSocket = "from-stdin-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -690,6 +701,7 @@ function Test-Log {
 
 #region Runner
 $tests = @(
+    'Test-ListPorts'
     'Test-TcpListenRoundTrip'
     'Test-TcpListenIPv6'
     'Test-Bridge'
