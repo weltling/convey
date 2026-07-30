@@ -67,6 +67,7 @@ static bool is_console{false},
 static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 static std::atomic<bool> hex_on{false};
+static std::atomic<bool> logging_on{true};
 static bool restart_on_exit = false;
 static bool is_reconnect = false;
 static SOCKET listen_sock{INVALID_SOCKET};
@@ -748,6 +749,9 @@ static DWORD convey_log_session_record(char* out, const char* buf, DWORD bytes, 
 
 static void convey_log_recv(const char* buf, DWORD bytes)
 {/*{{{*/
+	if (!logging_on) {
+		return;
+	}
 	convey_log_to(log_recv_handle, buf, bytes);
 	if (INVALID_HANDLE_VALUE != log_handle && bytes) {
 		char rec[BUF_SIZE + 2];
@@ -757,6 +761,9 @@ static void convey_log_recv(const char* buf, DWORD bytes)
 
 static void convey_log_sent(const char* buf, DWORD bytes)
 {/*{{{*/
+	if (!logging_on) {
+		return;
+	}
 	convey_log_to(log_send_handle, buf, bytes);
 	if (INVALID_HANDLE_VALUE != log_handle && bytes) {
 		char rec[BUF_SIZE + 2];
@@ -1355,6 +1362,28 @@ static void convey_do_command(char cmd)
 		hex_on = !hex_on;
 		std::cout << "\r\nconvey: hex " << (hex_on ? "on" : "off") << "\r\n" << std::flush;
 		break;
+	case 'l':
+		if (INVALID_HANDLE_VALUE != log_handle || INVALID_HANDLE_VALUE != log_recv_handle || INVALID_HANDLE_VALUE != log_send_handle) {
+			logging_on = !logging_on;
+			std::cout << "\r\nconvey: logging " << (logging_on ? "on" : "off") << "\r\n" << std::flush;
+		} else {
+			// No log configured yet: start one under an auto-named file.
+			auto pad = [](unsigned v, size_t w) {
+				std::string s = std::to_string(v);
+				return std::string(w > s.size() ? w - s.size() : 0, '0') + s;
+			};
+			SYSTEMTIME st;
+			GetLocalTime(&st);
+			std::string name = "convey-" + pad(st.wYear, 4) + pad(st.wMonth, 2) + pad(st.wDay, 2)
+				+ "-" + pad(st.wHour, 2) + pad(st.wMinute, 2) + pad(st.wSecond, 2) + ".log";
+			if (convey_open_log(name, log_handle)) {
+				logging_on = true;
+				std::cout << "\r\nconvey: logging to " << name << "\r\n" << std::flush;
+			} else {
+				std::cerr << "\r\nconvey: could not open " << name << "\r\n";
+			}
+		}
+		break;
 	case 'c':
 		if (is_console && !conf.no_xterm) {
 			std::cout << "\x1b[2J\x1b[3J\x1b[H" << std::flush;
@@ -1380,6 +1409,7 @@ static void convey_do_command(char cmd)
 			"  b  send a serial BREAK\r\n"
 			"  r  pulse the serial DTR line to reset\r\n"
 			"  h  toggle the hex view\r\n"
+			"  l  toggle logging\r\n"
 			"  c  clear the screen\r\n"
 			"  .  show connection status\r\n"
 			"  ?  show this help\r\n" << std::flush;
