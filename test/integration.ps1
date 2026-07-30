@@ -441,6 +441,36 @@ function Test-CtrlABreak {
     Remove-Item $inFile, $errFile -ErrorAction SilentlyContinue
 }
 
+function Test-CtrlAMenu {
+    # ctrl-a ? lists the commands and ctrl-a . prints the connection status
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](1, 0x3f, 1, 0x2e))
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $out = [System.IO.File]::ReadAllText($outFile)
+    Assert-Equal $true ($out -match 'convey commands') 'ctrl-a ? lists the commands'
+    Assert-Equal $true ($out -match 'connected') 'ctrl-a . shows the status'
+    # The console uses DISABLE_NEWLINE_AUTO_RETURN, so convey must emit CRLF or
+    # its multi-line output staircases; a bare LF here would be the bug.
+    Assert-Equal $true ($out.Contains("convey commands (after the escape key):`r`n  q  quit`r`n")) 'ctrl-a ? uses CRLF line breaks'
+    Assert-Equal $false ($out.Contains("q  quit`n") -and -not $out.Contains("q  quit`r`n")) 'ctrl-a ? does not emit bare LF'
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
+
 function Test-CtrlCClean {
     # Ctrl+Break in a non-interactive session exits convey cleanly (exit code 0)
     $port = Get-FreePort
@@ -607,6 +637,7 @@ $tests = @(
     'Test-CtrlAQuit'
     'Test-CustomEscape'
     'Test-CtrlABreak'
+    'Test-CtrlAMenu'
     'Test-CtrlCClean'
     'Test-LineEndings'
     'Test-LogRecv'
