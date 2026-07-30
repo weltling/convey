@@ -27,6 +27,8 @@ The physical COM port usage is a simple as invoking the tool with the COM port n
 
 There's no difference whether it's a native COM port or a USB-to-COM convertor. As long as the COM port appears under the device manager, it is usable.
 
+Run `convey.exe --list-serial-ports` to see the serial ports currently present on the system.
+
 
 # Usage with Hyper-V
 
