@@ -547,6 +547,70 @@ function Test-LogRecv {
     Remove-Item $inFile, $logFile, $outFile -ErrorAction SilentlyContinue
 }
 
+function Test-ToggleLogging {
+    # ctrl-a l turns logging off, so bytes received afterwards are not logged
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](1, 0x6c))
+    $logFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--log-recv", $logFile `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 500
+        $s = $client.GetStream()
+        $b = [System.Text.Encoding]::ASCII.GetBytes("secret")
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    Assert-Equal '' ([System.IO.File]::ReadAllText($logFile)) 'ctrl-a l off suppresses the log'
+    Remove-Item $inFile, $logFile, $outFile -ErrorAction SilentlyContinue
+}
+
+function Test-AutoLog {
+    # ctrl-a l with no configured log starts an auto-named session log
+    $port = Get-FreePort
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("convey-auto-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $dir | Out-Null
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](1, 0x6c))
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -WorkingDirectory $dir -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 500
+        $s = $client.GetStream()
+        $b = [System.Text.Encoding]::ASCII.GetBytes("autocap")
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $logs = @(Get-ChildItem -Path $dir -Filter 'convey-*.log')
+    Assert-Equal 1 $logs.Count 'ctrl-a l creates one auto-named log'
+    if ($logs.Count -ge 1) {
+        Assert-Equal $true ([System.IO.File]::ReadAllText($logs[0].FullName).Contains('autocap')) 'auto log captures received bytes'
+    }
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+    Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Test-LogSend {
     # --log-send tees everything sent to the target into a file.
     $port = Get-FreePort
@@ -641,6 +705,8 @@ $tests = @(
     'Test-CtrlCClean'
     'Test-LineEndings'
     'Test-LogRecv'
+    'Test-ToggleLogging'
+    'Test-AutoLog'
     'Test-LogSend'
     'Test-LogConflict'
     'Test-Log'
