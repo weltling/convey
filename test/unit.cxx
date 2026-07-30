@@ -200,6 +200,8 @@ int main()
 		EXPECT(convey_parse_escape("^A") == 0x01);
 		EXPECT(convey_parse_escape("ctrl-]") == 0x1d);
 		EXPECT(convey_parse_escape("C-a") == 0x01);
+		EXPECT(convey_parse_escape("ctrl+b") == 0x02);
+		EXPECT(convey_parse_escape("c+b") == 0x02);
 		EXPECT(convey_parse_escape("nope") == -1);
 		EXPECT(run_setup({"convey", "--escape", "^]", "COM1"}) == convey_setup_ok);
 		EXPECT(conf.escape == 0x1d);

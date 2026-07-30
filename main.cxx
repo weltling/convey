@@ -374,9 +374,9 @@ static int convey_parse_escape(std::string s)
 	char key = 0;
 	if (2 == s.size() && '^' == s[0]) {
 		key = s[1];
-	} else if (3 == s.size() && 0 == low.compare(0, 2, "c-")) {
+	} else if (3 == s.size() && 'c' == low[0] && ('-' == low[1] || '+' == low[1])) {
 		key = s[2];
-	} else if (6 == s.size() && 0 == low.compare(0, 5, "ctrl-")) {
+	} else if (6 == s.size() && 0 == low.compare(0, 4, "ctrl") && ('-' == low[4] || '+' == low[4])) {
 		key = s[5];
 	} else {
 		return -1;
@@ -1325,7 +1325,7 @@ static void convey_do_command(char cmd)
 	switch (cmd) {
 	case 'q':
 		if (conf.verbose) {
-			std::cout << "\r\nconvey: ctrl-a q, exit\r\n" << std::flush;
+			std::cout << "\r\nconvey: quit\r\n" << std::flush;
 		}
 		convey_quit(0);
 		break;
@@ -1335,7 +1335,7 @@ static void convey_do_command(char cmd)
 			std::this_thread::sleep_for(std::chrono::milliseconds(300));
 			ClearCommBreak(pipe);
 			if (conf.verbose) {
-				std::cout << "\r\nconvey: ctrl-a b, break sent\r\n" << std::flush;
+				std::cout << "\r\nconvey: break sent\r\n" << std::flush;
 			}
 		} else {
 			std::cerr << "\r\nconvey: break is only supported on a serial port\r\n";
@@ -1345,7 +1345,7 @@ static void convey_do_command(char cmd)
 		if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
 			convey_apply_line(pipe, true, convey_line_pulse);
 			if (conf.verbose) {
-				std::cout << "\r\nconvey: ctrl-a r, dtr reset pulse\r\n" << std::flush;
+				std::cout << "\r\nconvey: dtr reset pulse\r\n" << std::flush;
 			}
 		} else {
 			std::cerr << "\r\nconvey: line control is only supported on a serial port\r\n";
