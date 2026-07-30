@@ -389,6 +389,34 @@ static int convey_parse_escape(std::string s)
 	return up & 0x1f;
 }
 
+// List the serial ports present in HKLM\HARDWARE\DEVICEMAP\SERIALCOMM.
+static void convey_print_serial_ports(void)
+{
+	HKEY key;
+	if (ERROR_SUCCESS != RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+			"HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_READ, &key)) {
+		std::cout << "No serial ports found." << std::endl;
+		return;
+	}
+	bool any = false;
+	for (DWORD i = 0; ; ++i) {
+		char name[256];
+		BYTE data[256];
+		DWORD nlen = sizeof name, dlen = sizeof data, type = 0;
+		if (ERROR_SUCCESS != RegEnumValueA(key, i, name, &nlen, nullptr, &type, data, &dlen)) {
+			break;
+		}
+		if (REG_SZ == type) {
+			std::cout << reinterpret_cast<const char*>(data) << std::endl;
+			any = true;
+		}
+	}
+	RegCloseKey(key);
+	if (!any) {
+		std::cout << "No serial ports found." << std::endl;
+	}
+}
+
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	CLI::App app{"IPC through a named pipe, a serial port or a TCP endpoint.", "convey"};
@@ -409,6 +437,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	double poll = 0.0;
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
 	bool eol_raw = false, eol_lf = false, eol_crlf = false;
+	bool list_ports = false;
 	uint32_t max_retries = 0;
 	std::string escape_arg;
 
@@ -419,6 +448,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("-p,--poll", poll, "Poll pipe for N seconds on startup.")->group("Connection")->capture_default_str()->type_name("SECONDS");
 	app.add_flag("--reconnect", reconnect, "Try to reconnect after connection loss.")->group("Connection");
 	app.add_option("--max-retries", max_retries, "Give up reconnecting after N attempts (0 = unlimited).")->group("Connection")->capture_default_str()->type_name("N");
+	app.add_flag("--list-serial-ports", list_ports, "List available serial ports and exit.")->group("Connection");
 
 	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
@@ -465,6 +495,11 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		std::cerr << "convey: " << e.what() << std::endl;
 		std::cerr << "Try 'convey --help' for more information." << std::endl;
 		return convey_setup_exit_err;
+	}
+
+	if (list_ports) {
+		convey_print_serial_ports();
+		return convey_setup_exit_ok;
 	}
 
 	conf.verbose = verbose;
