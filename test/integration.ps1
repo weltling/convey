@@ -124,6 +124,7 @@ function Test-SendFile {
         Start-Sleep -Milliseconds 600
         $client = [System.Net.Sockets.TcpClient]::new()
         $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 500
         $got = Read-Text $client.GetStream() 64 3000
         $client.Close()
     } finally {
@@ -347,6 +348,31 @@ function Test-ReadOnly {
     }
     Start-Sleep -Milliseconds 200
     Assert-Equal $recv ([System.IO.File]::ReadAllText($outFile).Trim()) 'read only received bytes still reach stdout'
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
+
+function Test-LocalEcho {
+    # --local-echo echoes typed input to stdout even when the target is silent
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($inFile, "ping")
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--local-echo" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $out = [System.IO.File]::ReadAllText($outFile)
+    Assert-Equal $true ($out -match 'ping') '--local-echo echoes typed input to stdout'
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
 
@@ -733,6 +759,7 @@ $tests = @(
     'Test-TcpClientReconnect'
     'Test-ReconnectStatus'
     'Test-ReadOnly'
+    'Test-LocalEcho'
     'Test-Timestamps'
     'Test-Hex'
     'Test-CtrlAQuit'
