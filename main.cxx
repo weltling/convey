@@ -68,6 +68,7 @@ static std::atomic<bool> is_error{false};
 static std::atomic<bool> shutting_down{false};
 static std::atomic<bool> hex_on{false};
 static std::atomic<bool> logging_on{true};
+static std::atomic<bool> file_sent{false};
 static bool restart_on_exit = false;
 static bool is_reconnect = false;
 static SOCKET listen_sock{INVALID_SOCKET};
@@ -191,6 +192,8 @@ struct convey_conf {
 	convey_line dtr;
 	convey_line rts;
 	char escape;
+	std::string send_file;
+	uint32_t send_delay;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -440,6 +443,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	bool list_ports = false;
 	uint32_t max_retries = 0;
 	std::string escape_arg;
+	std::string send_file;
+	uint32_t send_delay = 0;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -449,6 +454,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--reconnect", reconnect, "Try to reconnect after connection loss.")->group("Connection");
 	app.add_option("--max-retries", max_retries, "Give up reconnecting after N attempts (0 = unlimited).")->group("Connection")->capture_default_str()->type_name("N");
 	app.add_flag("--list-serial-ports", list_ports, "List available serial ports and exit.")->group("Connection");
+	app.add_option("--send-file", send_file, "Stream a file to the target after connecting.")->group("Connection")->type_name("FILE");
+	app.add_option("--send-delay", send_delay, "Delay in ms between sent lines when sending a file.")->group("Connection")->capture_default_str()->type_name("MS");
 
 	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
@@ -546,6 +553,9 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		}
 		conf.escape = static_cast<char>(e);
 	}
+
+	conf.send_file = send_file;
+	conf.send_delay = send_delay;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1337,6 +1347,90 @@ static bool convey_read_console(HANDLE h, char* buf, DWORD cap, DWORD* bytes)
 	return true;
 }/*}}}*/
 
+// Stream a file to the target, optionally pacing per line; console-side only.
+static bool convey_send_file(const std::string& path)
+{/*{{{*/
+	if (INVALID_HANDLE_VALUE == pipe) {
+		std::cerr << "\r\nconvey: not connected\r\n";
+		return false;
+	}
+	HANDLE fh = CreateFile(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (INVALID_HANDLE_VALUE == fh) {
+		std::cerr << "\r\nconvey: cannot open '" << path << "'\r\n";
+		return false;
+	}
+	std::string data;
+	char rb[BUF_SIZE];
+	DWORD rd = 0;
+	while (ReadFile(fh, rb, sizeof rb, &rd, nullptr) && rd) {
+		data.append(rb, rd);
+	}
+	CloseHandle(fh);
+
+	std::string enc = convey_encode_eol(data.data(), static_cast<DWORD>(data.size()), conf.eol, conf.no_xterm);
+
+	HANDLE ev = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+	size_t off = 0, total = enc.size();
+	DWORD er = 0;
+	bool ok = true;
+	while (off < total) {
+		size_t end;
+		if (conf.send_delay > 0) {
+			size_t nl = enc.find('\n', off);
+			end = (std::string::npos == nl) ? total : nl + 1;
+		} else {
+			end = off + BUF_SIZE;
+			if (end > total) {
+				end = total;
+			}
+		}
+		DWORD n = static_cast<DWORD>(end - off);
+		if (!convey_write_pipe(pipe, enc.data() + off, &n, ev, er)) {
+			ok = false;
+			break;
+		}
+		off += n;
+		if (conf.send_delay > 0) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(conf.send_delay));
+		}
+	}
+	CloseHandle(ev);
+
+	if (ok) {
+		std::cerr << "\r\nconvey: sent '" << path << "' (" << off << " bytes)\r\n";
+	} else {
+		std::cerr << "\r\nconvey: send failed for '" << path << "'\r\n";
+	}
+	return ok;
+}/*}}}*/
+
+// Read one line from the console in cooked mode; used for interactive prompts.
+static bool convey_prompt_line(const char* prompt, std::string& out)
+{/*{{{*/
+	std::cout << "\r\n" << prompt << std::flush;
+	DWORD saved = 0;
+	bool have = 0 != GetConsoleMode(in, &saved);
+	if (have) {
+		SetConsoleMode(in, ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+	}
+	wchar_t wbuf[1024];
+	DWORD n = 0;
+	bool ok = 0 != ReadConsoleW(in, wbuf, 1023, &n, nullptr);
+	if (have) {
+		SetConsoleMode(in, saved);
+	}
+	if (!ok) {
+		return false;
+	}
+	while (n > 0 && (L'\n' == wbuf[n - 1] || L'\r' == wbuf[n - 1])) {
+		--n;
+	}
+	char mb[2048];
+	int mlen = WideCharToMultiByte(CP_UTF8, 0, wbuf, static_cast<int>(n), mb, sizeof mb, nullptr, nullptr);
+	out.assign(mb, mlen > 0 ? mlen : 0);
+	return !out.empty();
+}/*}}}*/
+
 static void convey_quit(int code)
 {/*{{{*/
 	restart_on_exit = false;
@@ -1344,7 +1438,6 @@ static void convey_quit(int code)
 	convey_final_cleanup();
 	ExitProcess(static_cast<UINT>(code));
 }/*}}}*/
-
 /* Turn a bare Ctrl+C/Ctrl+Break/console-close into an orderly shutdown so the
  * console mode is restored and the transport and sockets are released. */
 static BOOL WINAPI convey_ctrl_handler(DWORD type)
@@ -1424,6 +1517,18 @@ static void convey_do_command(char cmd)
 			std::cout << "\x1b[2J\x1b[3J\x1b[H" << std::flush;
 		}
 		break;
+	case 'x':
+		if (is_console) {
+			std::string path;
+			if (convey_prompt_line("send file: ", path)) {
+				convey_send_file(path);
+			}
+		} else if (!conf.send_file.empty()) {
+			convey_send_file(conf.send_file);
+		} else {
+			std::cerr << "\r\nconvey: no file to send\r\n";
+		}
+		break;
 	case '.': {
 		const char* tp = "pipe";
 		if (convey_transport_is_tcp()) {
@@ -1446,6 +1551,7 @@ static void convey_do_command(char cmd)
 			"  h  toggle the hex view\r\n"
 			"  l  toggle logging\r\n"
 			"  c  clear the screen\r\n"
+			"  x  send a file\r\n"
 			"  .  show connection status\r\n"
 			"  ?  show this help\r\n" << std::flush;
 		break;
@@ -1535,6 +1641,12 @@ restart:
 			return 1;
 		case convey_setup_exit_ok:
 			return 0;
+	}
+
+	if (!conf.bridge && !conf.send_file.empty() && !file_sent) {
+		file_sent = true;
+		std::string path = conf.send_file;
+		std::thread([path]() { convey_send_file(path); }).detach();
 	}
 
 	if (conf.bridge) {
