@@ -109,6 +109,30 @@ function Test-ListPorts {
     Remove-Item $outFile -ErrorAction SilentlyContinue
 }
 
+function Test-SendFile {
+    # --send-file streams a file to the target after connecting, paced per line
+    $port = Get-FreePort
+    $sf = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($sf, "line1`nline2`n")
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--send-file", $sf, "--send-delay", "5" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $got = Read-Text $client.GetStream() 64 3000
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Assert-Equal "line1`nline2`n" $got '--send-file streams the file to the target'
+    Remove-Item $sf, $inFile, $outFile -ErrorAction SilentlyContinue
+}
+
 function Test-TcpListenRoundTrip {
     $port = Get-FreePort
     $toSocket = "from-stdin-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -702,6 +726,7 @@ function Test-Log {
 #region Runner
 $tests = @(
     'Test-ListPorts'
+    'Test-SendFile'
     'Test-TcpListenRoundTrip'
     'Test-TcpListenIPv6'
     'Test-Bridge'
