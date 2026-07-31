@@ -154,6 +154,7 @@ While a session is running, press `Ctrl+A` followed by a command key:
 - `h` toggles the hex view of the received stream.
 - `l` toggles logging on and off. With no `--log` configured it starts logging to an auto-named `convey-<timestamp>.log` session file in the working directory.
 - `c` clears the screen.
+- `x` sends a file: it prompts for a path and streams the file to the target.
 - `.` prints the connection status (transport, endpoint, connected state, hex and read-only flags).
 - `?` lists the available commands.
 
@@ -162,6 +163,17 @@ A BREAK on the serial console is how a Linux guest receives `Alt+SysRq` (see the
 The `--dtr` and `--rts` options set those serial control lines when the port is opened, each taking `on`, `off` or `pulse`. A `pulse` de-asserts the line for about 120 ms and then re-asserts it, the same reset pulse `Ctrl+A r` sends for DTR.
 
 The command prefix defaults to `Ctrl+A` and can be changed with `--escape`, which accepts a control-key spec such as `^]`, `ctrl-]`, `ctrl+x` or `C-x`. This helps when `Ctrl+A` collides with a shell or readline binding.
+
+
+# Sending a file
+
+Convey can stream a local file to the target as raw bytes, which is handy for pushing a script or config onto a board whose only link is the serial console. The receiving side needs something that consumes the bytes, typically a shell reading the console (for example `base64 -d > file` followed by the streamed data). It is a console convenience, not a transfer protocol, and it must not be pointed at a `--bridge` or kernel-debug channel.
+
+- `--send-file <file>` streams the file once after connecting.
+- `Ctrl+A x` prompts for a path and streams it during a session.
+- `--send-delay <ms>` waits between sent lines, so a line-buffered shell or bootloader does not drop input. Hardware flow control (`--flow-control rts/cts`) achieves the same without a fixed delay.
+
+The sent bytes follow the `--raw`/`--lf`/`--crlf` line-ending choice.
 
 In an interactive console `Ctrl+C` is passed through to the target. When there is no interactive console to type into (`--no-xterm`, redirected input or `--bridge`), `Ctrl+C` quits convey after restoring the console and closing the transport.
 
