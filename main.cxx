@@ -69,6 +69,7 @@ static std::atomic<bool> shutting_down{false};
 static std::atomic<bool> hex_on{false};
 static std::atomic<bool> logging_on{true};
 static std::atomic<bool> file_sent{false};
+static std::atomic<bool> echo_on{false};
 static bool restart_on_exit = false;
 static bool is_reconnect = false;
 static SOCKET listen_sock{INVALID_SOCKET};
@@ -194,6 +195,7 @@ struct convey_conf {
 	char escape;
 	std::string send_file;
 	uint32_t send_delay;
+	bool local_echo;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -445,6 +447,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string escape_arg;
 	std::string send_file;
 	uint32_t send_delay = 0;
+	bool local_echo = false;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -477,6 +480,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--read-only", read_only, "Monitor only and do not send anything to the endpoint.")->group("General");
 	app.add_flag("--timestamps", timestamps, "Prefix each received line with a local time stamp.")->group("General");
 	app.add_flag("--hex", hex, "Show the received stream as a hex dump instead of text.")->group("General");
+	app.add_flag("--local-echo", local_echo, "Echo typed input locally for non-echoing targets.")->group("General");
 	app.add_option("--escape", escape_arg, "Escape key for the ctrl-a commands (^A, ctrl-], ...).")->group("General")->type_name("KEY");
 	auto* opt_raw = app.add_flag("--raw", eol_raw, "Send input with no newline translation.")->group("General");
 	auto* opt_lf = app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF.")->group("General");
@@ -556,6 +560,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 	conf.send_file = send_file;
 	conf.send_delay = send_delay;
+	conf.local_echo = local_echo;
+	echo_on = local_echo;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1431,6 +1437,25 @@ static bool convey_prompt_line(const char* prompt, std::string& out)
 	return !out.empty();
 }/*}}}*/
 
+// Echo typed input to stdout, expanding CR to CRLF so lines advance.
+static void convey_echo_local(const char* buf, DWORD bytes)
+{/*{{{*/
+	if (!echo_on) {
+		return;
+	}
+	std::string e;
+	e.reserve(bytes + 8);
+	for (DWORD i = 0; i < bytes; ++i) {
+		if ('\r' == buf[i]) {
+			e.append("\r\n", 2);
+		} else {
+			e.push_back(buf[i]);
+		}
+	}
+	DWORD w = 0;
+	WriteFile(out, e.data(), static_cast<DWORD>(e.size()), &w, nullptr);
+}/*}}}*/
+
 static void convey_quit(int code)
 {/*{{{*/
 	restart_on_exit = false;
@@ -1489,6 +1514,10 @@ static void convey_do_command(char cmd)
 	case 'h':
 		hex_on = !hex_on;
 		std::cout << "\r\nconvey: hex " << (hex_on ? "on" : "off") << "\r\n" << std::flush;
+		break;
+	case 'e':
+		echo_on = !echo_on;
+		std::cout << "\r\nconvey: local echo " << (echo_on ? "on" : "off") << "\r\n" << std::flush;
 		break;
 	case 'l':
 		if (INVALID_HANDLE_VALUE != log_handle || INVALID_HANDLE_VALUE != log_recv_handle || INVALID_HANDLE_VALUE != log_send_handle) {
@@ -1549,6 +1578,7 @@ static void convey_do_command(char cmd)
 			"  b  send a serial BREAK\r\n"
 			"  r  pulse the serial DTR line to reset\r\n"
 			"  h  toggle the hex view\r\n"
+			"  e  toggle local echo\r\n"
 			"  l  toggle logging\r\n"
 			"  c  clear the screen\r\n"
 			"  x  send a file\r\n"
@@ -1603,6 +1633,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 					}
 
 					if (bytes && !conf.read_only && INVALID_HANDLE_VALUE != pipe) {
+						convey_echo_local(buf, bytes);
 						std::string s = convey_encode_eol(buf, bytes, conf.eol, conf.no_xterm);
 						convey_log_sent(s.data(), static_cast<DWORD>(s.size()));
 						DWORD w = static_cast<DWORD>(s.size());
@@ -1769,6 +1800,7 @@ restart:
 			}
 
 			if (bytes && !conf.read_only) {
+				convey_echo_local(buf, bytes);
 				std::string s = convey_encode_eol(buf, bytes, conf.eol, conf.no_xterm);
 				DWORD w = static_cast<DWORD>(s.size());
 				convey_log_sent(s.data(), w);
