@@ -357,6 +357,23 @@ int main()
 		EXPECT(run_setup({"convey", "--dtr", "bogus", "COM1"}) == convey_setup_exit_err);
 	}
 	{
+		// convey_unescape decodes backslash escapes, rejecting a bad \x.
+		std::string out;
+		out.clear(); EXPECT(convey_unescape("abc", out) && out == "abc");
+		std::string crlf; crlf.push_back('a'); crlf.push_back('\r'); crlf.push_back('\n'); crlf.push_back('b');
+		out.clear(); EXPECT(convey_unescape("a\\r\\nb", out) && out == crlf);
+		out.clear(); EXPECT(convey_unescape("\\x41", out) && out == "A");
+		std::string esc; esc.push_back('\x1b');
+		out.clear(); EXPECT(convey_unescape("\\x1b", out) && out == esc);
+		out.clear(); EXPECT(convey_unescape("\\q", out) && out == "q");
+		out.clear(); EXPECT(!convey_unescape("\\xZZ", out));
+		// --send-init decodes into conf; a bad escape is rejected.
+		EXPECT(run_setup({"convey", "--send-init", "hi\\r\\n", "COM1"}) == convey_setup_ok);
+		std::string want; want += "hi"; want.push_back('\r'); want.push_back('\n');
+		EXPECT(conf.send_init == want);
+		EXPECT(run_setup({"convey", "--send-init", "\\xZZ", "COM1"}) == convey_setup_exit_err);
+	}
+	{
 		// convey_tcp_tune turns on NODELAY and keepalive on a data socket.
 		WSADATA wsa;
 		EXPECT(0 == WSAStartup(MAKEWORD(2, 2), &wsa));

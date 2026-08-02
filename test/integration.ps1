@@ -134,6 +134,29 @@ function Test-SendFile {
     Remove-Item $sf, $inFile, $outFile -ErrorAction SilentlyContinue
 }
 
+function Test-SendInit {
+    # --send-init sends a decoded string to the target on connect
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    $outFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm", "--send-init", "hi\r\n" `
+        -RedirectStandardInput $inFile -RedirectStandardOutput $outFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 300
+        $got = Read-Text $client.GetStream() 16 3000
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Assert-Equal "hi`r`n" $got '--send-init sends the decoded string on connect'
+    Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
+}
+
 function Test-TcpListenRoundTrip {
     $port = Get-FreePort
     $toSocket = "from-stdin-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -753,6 +776,7 @@ function Test-Log {
 $tests = @(
     'Test-ListPorts'
     'Test-SendFile'
+    'Test-SendInit'
     'Test-TcpListenRoundTrip'
     'Test-TcpListenIPv6'
     'Test-Bridge'
