@@ -374,6 +374,13 @@ int main()
 		EXPECT(run_setup({"convey", "--send-init", "\\xZZ", "COM1"}) == convey_setup_exit_err);
 	}
 	{
+		// --exit-on requires a valid regex and captures the timeout.
+		EXPECT(run_setup({"convey", "--exit-on", "READY", "COM1"}) == convey_setup_ok);
+		EXPECT(run_setup({"convey", "--exit-on", "R.DY", "--exit-timeout", "5", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.exit_timeout == 5);
+		EXPECT(run_setup({"convey", "--exit-on", "[", "COM1"}) == convey_setup_exit_err);
+	}
+	{
 		// convey_tcp_tune turns on NODELAY and keepalive on a data socket.
 		WSADATA wsa;
 		EXPECT(0 == WSAStartup(MAKEWORD(2, 2), &wsa));

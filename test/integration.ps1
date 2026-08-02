@@ -157,6 +157,55 @@ function Test-SendInit {
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
 
+function Test-Expect {
+    # --exit-on exits 0 as soon as the pattern appears in the received stream
+    $port = Get-FreePort
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $Convey
+    $psi.Arguments = "tcp-listen:$port --no-xterm --exit-on READY"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        $b = [System.Text.Encoding]::ASCII.GetBytes("booting...`nREADY`n")
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        $exited = $proc.WaitForExit(3000)
+        Assert-Equal $true $exited '--exit-on exits on match'
+        if ($exited) { Assert-Equal 0 $proc.ExitCode '--exit-on exits zero on match' }
+        $client.Close()
+    } finally {
+        if (-not $proc.HasExited) { $proc.Kill() }
+    }
+}
+
+function Test-ExpectTimeout {
+    # --exit-timeout exits non-zero when the pattern never appears
+    $port = Get-FreePort
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $Convey
+    $psi.Arguments = "tcp-listen:$port --no-xterm --exit-on NEVER --exit-timeout 1"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $exited = $proc.WaitForExit(4000)
+        Assert-Equal $true $exited '--exit-timeout exits'
+        if ($exited) { Assert-Equal 2 $proc.ExitCode '--exit-timeout exits non-zero' }
+        $client.Close()
+    } finally {
+        if (-not $proc.HasExited) { $proc.Kill() }
+    }
+}
+
 function Test-TcpListenRoundTrip {
     $port = Get-FreePort
     $toSocket = "from-stdin-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -777,6 +826,8 @@ $tests = @(
     'Test-ListPorts'
     'Test-SendFile'
     'Test-SendInit'
+    'Test-Expect'
+    'Test-ExpectTimeout'
     'Test-TcpListenRoundTrip'
     'Test-TcpListenIPv6'
     'Test-Bridge'
