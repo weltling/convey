@@ -180,6 +180,13 @@ The sent bytes follow the `--raw`/`--lf`/`--crlf` line-ending choice.
 
 `--send-init <string>` sends a fixed string to the target after every connect, including reconnects, which is handy for a login or unlock sequence. It accepts `\r`, `\n`, `\t`, `\0`, `\\` and `\xHH` escapes, for example `--send-init "root\r"`.
 
+
+# Waiting for a pattern
+
+`--exit-on <regex>` watches the received stream and exits with status 0 as soon as the ECMAScript regular expression matches. Together with `--send-init` this makes convey a scriptable step: connect, send a command, and wait for a prompt or a ready marker. `--exit-timeout <seconds>` exits with a non-zero status if the pattern has not appeared in time; the default of 0 waits forever. The match runs on the raw received bytes, before the hex or timestamp view.
+
+For example, `convey.exe --send-init "\r" --exit-on "login:" --exit-timeout 30 tcp:10.0.0.5:4445`.
+
 In an interactive console `Ctrl+C` is passed through to the target. When there is no interactive console to type into (`--no-xterm`, redirected input or `--bridge`), `Ctrl+C` quits convey after restoring the console and closing the transport.
 
 
