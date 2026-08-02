@@ -178,6 +178,8 @@ Convey can stream a local file to the target as raw bytes, which is handy for pu
 
 The sent bytes follow the `--raw`/`--lf`/`--crlf` line-ending choice.
 
+`--send-init <string>` sends a fixed string to the target after every connect, including reconnects, which is handy for a login or unlock sequence. It accepts `\r`, `\n`, `\t`, `\0`, `\\` and `\xHH` escapes, for example `--send-init "root\r"`.
+
 In an interactive console `Ctrl+C` is passed through to the target. When there is no interactive console to type into (`--no-xterm`, redirected input or `--bridge`), `Ctrl+C` quits convey after restoring the console and closing the transport.
 
 
