@@ -195,6 +195,7 @@ struct convey_conf {
 	char escape;
 	std::string send_file;
 	uint32_t send_delay;
+	std::string send_init;
 	bool local_echo;
 	std::string pipe_path;
 	double pipe_poll;
@@ -422,6 +423,49 @@ static void convey_print_serial_ports(void)
 	}
 }
 
+// Decode backslash escapes (\r \n \t \0 \\ \xHH) into raw bytes; false on a
+// malformed \x.
+static bool convey_unescape(const std::string& in, std::string& out)
+{
+	for (size_t i = 0; i < in.size(); ++i) {
+		if ('\\' != in[i]) {
+			out.push_back(in[i]);
+			continue;
+		}
+		if (++i >= in.size()) {
+			out.push_back('\\');
+			break;
+		}
+		switch (in[i]) {
+		case 'r': out.push_back('\r'); break;
+		case 'n': out.push_back('\n'); break;
+		case 't': out.push_back('\t'); break;
+		case '0': out.push_back('\0'); break;
+		case '\\': out.push_back('\\'); break;
+		case 'x': {
+			if (i + 2 >= in.size()) {
+				return false;
+			}
+			auto hex = [](char h) -> int {
+				if (h >= '0' && h <= '9') return h - '0';
+				if (h >= 'a' && h <= 'f') return h - 'a' + 10;
+				if (h >= 'A' && h <= 'F') return h - 'A' + 10;
+				return -1;
+			};
+			int hi = hex(in[i + 1]), lo = hex(in[i + 2]);
+			if (hi < 0 || lo < 0) {
+				return false;
+			}
+			out.push_back(static_cast<char>((hi << 4) | lo));
+			i += 2;
+			break;
+		}
+		default: out.push_back(in[i]); break;
+		}
+	}
+	return true;
+}
+
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	CLI::App app{"IPC through a named pipe, a serial port or a TCP endpoint.", "convey"};
@@ -447,6 +491,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string escape_arg;
 	std::string send_file;
 	uint32_t send_delay = 0;
+	std::string send_init_arg;
 	bool local_echo = false;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
@@ -459,6 +504,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--list-serial-ports", list_ports, "List available serial ports and exit.")->group("Connection");
 	app.add_option("--send-file", send_file, "Stream a file to the target after connecting.")->group("Connection")->type_name("FILE");
 	app.add_option("--send-delay", send_delay, "Delay in ms between sent lines when sending a file.")->group("Connection")->capture_default_str()->type_name("MS");
+	app.add_option("--send-init", send_init_arg, "Send this string after each connect (\\r, \\n, \\xHH escapes).")->group("Connection")->type_name("STR");
 
 	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
@@ -562,6 +608,12 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.send_delay = send_delay;
 	conf.local_echo = local_echo;
 	echo_on = local_echo;
+
+	conf.send_init.clear();
+	if (!send_init_arg.empty() && !convey_unescape(send_init_arg, conf.send_init)) {
+		std::cerr << "convey: invalid --send-init escape in '" << send_init_arg << "'" << std::endl;
+		return convey_setup_exit_err;
+	}
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1678,6 +1730,13 @@ restart:
 		file_sent = true;
 		std::string path = conf.send_file;
 		std::thread([path]() { convey_send_file(path); }).detach();
+	}
+
+	if (!conf.bridge && !conf.read_only && !conf.send_init.empty()) {
+		HANDLE ev = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+		DWORD n = static_cast<DWORD>(conf.send_init.size()), er = 0;
+		convey_write_pipe(pipe, conf.send_init.data(), &n, ev, er);
+		CloseHandle(ev);
 	}
 
 	if (conf.bridge) {
