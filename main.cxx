@@ -475,7 +475,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		"       convey [options] tcp:<host>:<port>\n"
 		"       convey [options] tcp-listen:<port>\n"
 		"       convey --bridge --pipe-server \\\\.\\pipe\\<name> tcp:<host>:<port>");
-	app.get_formatter()->column_width(40);
+	app.get_formatter()->column_width(34);
+	app.get_formatter()->long_option_alignment_ratio(6.f / 34.f);
 
 	std::string target;
 	std::string dev;
@@ -528,11 +529,9 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--hex", hex, "Show the received stream as a hex dump instead of text.")->group("General");
 	app.add_flag("--local-echo", local_echo, "Echo typed input locally for non-echoing targets.")->group("General");
 	app.add_option("--escape", escape_arg, "Escape key for the ctrl-a commands (^A, ctrl-], ...).")->group("General")->type_name("KEY");
-	auto* opt_raw = app.add_flag("--raw", eol_raw, "Send input with no newline translation.")->group("General");
-	auto* opt_lf = app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF.")->group("General");
-	auto* opt_crlf = app.add_flag("--crlf", eol_crlf, "Translate sent LF newlines to CRLF.")->group("General");
-	opt_raw->excludes(opt_lf)->excludes(opt_crlf);
-	opt_lf->excludes(opt_crlf);
+	app.add_flag("--raw", eol_raw, "Send input with no newline translation. Excludes --lf, --crlf.")->group("General");
+	app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF. Excludes --raw, --crlf.")->group("General");
+	app.add_flag("--crlf", eol_crlf, "Translate sent LF newlines to CRLF. Excludes --raw, --lf.")->group("General");
 	app.set_help_flag("-h,--help", "Display this help message and exit.")->group("General");
 	app.set_version_flag("-V,--version", std::string(VERSION), "Output version information and exit.")->group("General");
 	app.add_flag("-v,--verbose", verbose, "Print some additional messages.")->group("General");
@@ -590,6 +589,10 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.timestamps = timestamps;
 	conf.hex = hex;
 	hex_on = hex;
+	if ((eol_raw ? 1 : 0) + (eol_lf ? 1 : 0) + (eol_crlf ? 1 : 0) > 1) {
+		std::cerr << "convey: --raw, --lf and --crlf are mutually exclusive" << std::endl;
+		return convey_setup_exit_err;
+	}
 	conf.eol = eol_crlf ? convey_eol_crlf : eol_lf ? convey_eol_lf : eol_raw ? convey_eol_raw : convey_eol_auto;
 	conf.reconnect = reconnect;
 	conf.max_retries = max_retries;
