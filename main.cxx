@@ -42,6 +42,7 @@
 #include <iostream>
 #include <thread>
 #include <atomic>
+#include <regex>
 
 #include "CLI11.hpp"
 
@@ -70,6 +71,9 @@ static std::atomic<bool> hex_on{false};
 static std::atomic<bool> logging_on{true};
 static std::atomic<bool> file_sent{false};
 static std::atomic<bool> echo_on{false};
+static std::regex exit_re;
+static bool have_exit = false;
+static std::atomic<bool> exit_matched{false};
 static bool restart_on_exit = false;
 static bool is_reconnect = false;
 static SOCKET listen_sock{INVALID_SOCKET};
@@ -197,6 +201,7 @@ struct convey_conf {
 	uint32_t send_delay;
 	std::string send_init;
 	bool local_echo;
+	uint32_t exit_timeout;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -494,6 +499,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	uint32_t send_delay = 0;
 	std::string send_init_arg;
 	bool local_echo = false;
+	std::string exit_arg;
+	uint32_t exit_timeout = 0;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -506,6 +513,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("--send-file", send_file, "Stream a file to the target after connecting.")->group("Connection")->type_name("FILE");
 	app.add_option("--send-delay", send_delay, "Delay in ms between sent lines when sending a file.")->group("Connection")->capture_default_str()->type_name("MS");
 	app.add_option("--send-init", send_init_arg, "Send this string after each connect (\\r, \\n, \\xHH escapes).")->group("Connection")->type_name("STR");
+	app.add_option("--exit-on", exit_arg, "Exit once this regex appears in the received stream.")->group("Connection")->type_name("REGEX");
+	app.add_option("--exit-timeout", exit_timeout, "Exit with an error if --exit-on is not seen in N seconds (0 = wait forever).")->group("Connection")->capture_default_str()->type_name("SEC");
 
 	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
@@ -617,6 +626,19 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		std::cerr << "convey: invalid --send-init escape in '" << send_init_arg << "'" << std::endl;
 		return convey_setup_exit_err;
 	}
+
+	have_exit = false;
+	exit_matched = false;
+	if (!exit_arg.empty()) {
+		try {
+			exit_re.assign(exit_arg, std::regex::ECMAScript);
+			have_exit = true;
+		} catch (const std::regex_error&) {
+			std::cerr << "convey: invalid --exit-on regex '" << exit_arg << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+	}
+	conf.exit_timeout = exit_timeout;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1518,6 +1540,24 @@ static void convey_quit(int code)
 	convey_final_cleanup();
 	ExitProcess(static_cast<UINT>(code));
 }/*}}}*/
+
+// Feed received bytes to the --exit-on matcher; exit 0 on the first match.
+static void convey_exit_feed(const char* buf, DWORD bytes)
+{/*{{{*/
+	if (!have_exit || exit_matched) {
+		return;
+	}
+	static std::string accum;
+	accum.append(buf, bytes);
+	if (std::regex_search(accum, exit_re)) {
+		exit_matched = true;
+		std::cerr << "\r\nconvey: --exit-on matched\r\n";
+		convey_quit(0);
+	}
+	if (accum.size() > 65536) {
+		accum.erase(0, accum.size() - 4096);
+	}
+}/*}}}*/
 /* Turn a bare Ctrl+C/Ctrl+Break/console-close into an orderly shutdown so the
  * console mode is restored and the transport and sockets are released. */
 static BOOL WINAPI convey_ctrl_handler(DWORD type)
@@ -1718,6 +1758,17 @@ int main(int argc, char** argv)
 			return 0;
 	}
 
+	if (have_exit && conf.exit_timeout > 0) {
+		uint32_t ms = conf.exit_timeout * 1000;
+		std::thread([ms]() {
+			std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+			if (!exit_matched) {
+				std::cerr << "\r\nconvey: --exit-on timed out\r\n";
+				convey_quit(2);
+			}
+		}).detach();
+	}
+
 restart:
 	switch (convey_connect(argc, argv)) {
 		case convey_setup_ok:
@@ -1909,6 +1960,7 @@ restart:
 
 			if (bytes) {
 				convey_log_recv(buf, bytes);
+				convey_exit_feed(buf, bytes);
 				const char* wbuf = buf;
 				DWORD wbytes = bytes;
 				std::string hexbuf, tsbuf;
