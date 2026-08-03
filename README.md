@@ -187,6 +187,10 @@ The sent bytes follow the `--raw`/`--lf`/`--crlf` line-ending choice.
 
 For example, `convey.exe --send-init "\r" --exit-on "login:" --exit-timeout 30 tcp:10.0.0.5:4445`.
 
+For an interactive login or unlock dialog, pair `--expect <regex>` with `--reply <string>`: each time the pattern is seen convey sends the reply and advances to the next pair, then keeps the session running. Pairs are matched in order, the reply accepts the same escapes as `--send-init`, and `--expect-timeout <seconds>` fails if the sequence does not complete in time.
+
+For example, `convey.exe --expect "login:" --reply "root\r" --expect "Password:" --reply "hunter2\r" --expect-timeout 30 tcp:10.0.0.5:4445`.
+
 In an interactive console `Ctrl+C` is passed through to the target. When there is no interactive console to type into (`--no-xterm`, redirected input or `--bridge`), `Ctrl+C` quits convey after restoring the console and closing the transport.
 
 
