@@ -43,6 +43,7 @@
 #include <thread>
 #include <atomic>
 #include <regex>
+#include <vector>
 
 #include "CLI11.hpp"
 
@@ -74,6 +75,10 @@ static std::atomic<bool> echo_on{false};
 static std::regex exit_re;
 static bool have_exit = false;
 static std::atomic<bool> exit_matched{false};
+struct convey_expect_step { std::regex re; std::string reply; };
+static std::vector<convey_expect_step> expect_steps;
+static size_t expect_idx = 0;
+static std::atomic<bool> expect_done{false};
 static bool restart_on_exit = false;
 static bool is_reconnect = false;
 static SOCKET listen_sock{INVALID_SOCKET};
@@ -202,6 +207,7 @@ struct convey_conf {
 	std::string send_init;
 	bool local_echo;
 	uint32_t exit_timeout;
+	uint32_t expect_timeout;
 	std::string pipe_path;
 	double pipe_poll;
 	uint32_t baud;
@@ -501,6 +507,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	bool local_echo = false;
 	std::string exit_arg;
 	uint32_t exit_timeout = 0;
+	std::vector<std::string> expect_pats, expect_replies;
+	uint32_t expect_timeout = 0;
 
 	// Endpoint given as the first positional argument; --dev is an alias.
 	app.add_option("target", target, "")->group("");
@@ -515,6 +523,9 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("--send-init", send_init_arg, "Send this string after each connect (\\r, \\n, \\xHH escapes).")->group("Connection")->type_name("STR");
 	app.add_option("--exit-on", exit_arg, "Exit once this regex appears in the received stream.")->group("Connection")->type_name("REGEX");
 	app.add_option("--exit-timeout", exit_timeout, "Exit with an error if --exit-on is not seen in N seconds (0 = wait forever).")->group("Connection")->capture_default_str()->type_name("SEC");
+	app.add_option("--expect", expect_pats, "Wait for this regex, then send the matching --reply (repeatable).")->group("Connection")->type_name("REGEX")->allow_extra_args(false);
+	app.add_option("--reply", expect_replies, "Reply to send when the matching --expect is seen (escapes allowed).")->group("Connection")->type_name("STR")->allow_extra_args(false);
+	app.add_option("--expect-timeout", expect_timeout, "Fail if the --expect sequence is not completed in N seconds.")->group("Connection")->capture_default_str()->type_name("SEC");
 
 	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
@@ -639,6 +650,29 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		}
 	}
 	conf.exit_timeout = exit_timeout;
+
+	expect_steps.clear();
+	expect_idx = 0;
+	expect_done = false;
+	if (expect_pats.size() != expect_replies.size()) {
+		std::cerr << "convey: each --expect needs a matching --reply" << std::endl;
+		return convey_setup_exit_err;
+	}
+	for (size_t i = 0; i < expect_pats.size(); ++i) {
+		convey_expect_step step;
+		try {
+			step.re.assign(expect_pats[i], std::regex::ECMAScript);
+		} catch (const std::regex_error&) {
+			std::cerr << "convey: invalid --expect regex '" << expect_pats[i] << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+		if (!convey_unescape(expect_replies[i], step.reply)) {
+			std::cerr << "convey: invalid --reply escape in '" << expect_replies[i] << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+		expect_steps.push_back(std::move(step));
+	}
+	conf.expect_timeout = expect_timeout;
 
 	if (!convey_baud_is_valid(baud)) {
 		std::cerr << "convey: unsupported baud rate '" << baud << "'" << std::endl;
@@ -1558,6 +1592,35 @@ static void convey_exit_feed(const char* buf, DWORD bytes)
 		accum.erase(0, accum.size() - 4096);
 	}
 }/*}}}*/
+
+// Drive the --expect/--reply sequence: on each step's match send its reply and
+// advance; the session continues after the last step.
+static void convey_expect_feed(const char* buf, DWORD bytes)
+{/*{{{*/
+	if (expect_steps.empty() || expect_idx >= expect_steps.size()) {
+		return;
+	}
+	static std::string accum;
+	accum.append(buf, bytes);
+	if (std::regex_search(accum, expect_steps[expect_idx].re)) {
+		const std::string& reply = expect_steps[expect_idx].reply;
+		if (!reply.empty() && INVALID_HANDLE_VALUE != pipe) {
+			HANDLE ev = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+			DWORD n = static_cast<DWORD>(reply.size()), er = 0;
+			convey_write_pipe(pipe, reply.data(), &n, ev, er);
+			CloseHandle(ev);
+		}
+		++expect_idx;
+		accum.clear();
+		if (expect_idx >= expect_steps.size()) {
+			expect_done = true;
+			std::cerr << "\r\nconvey: expect sequence complete\r\n";
+		}
+	}
+	if (accum.size() > 65536) {
+		accum.erase(0, accum.size() - 4096);
+	}
+}/*}}}*/
 /* Turn a bare Ctrl+C/Ctrl+Break/console-close into an orderly shutdown so the
  * console mode is restored and the transport and sockets are released. */
 static BOOL WINAPI convey_ctrl_handler(DWORD type)
@@ -1769,6 +1832,17 @@ int main(int argc, char** argv)
 		}).detach();
 	}
 
+	if (!expect_steps.empty() && conf.expect_timeout > 0) {
+		uint32_t ms = conf.expect_timeout * 1000;
+		std::thread([ms]() {
+			std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+			if (!expect_done) {
+				std::cerr << "\r\nconvey: --expect sequence timed out\r\n";
+				convey_quit(2);
+			}
+		}).detach();
+	}
+
 restart:
 	switch (convey_connect(argc, argv)) {
 		case convey_setup_ok:
@@ -1961,6 +2035,7 @@ restart:
 			if (bytes) {
 				convey_log_recv(buf, bytes);
 				convey_exit_feed(buf, bytes);
+				convey_expect_feed(buf, bytes);
 				const char* wbuf = buf;
 				DWORD wbytes = bytes;
 				std::string hexbuf, tsbuf;
