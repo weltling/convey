@@ -477,6 +477,23 @@ static bool convey_unescape(const std::string& in, std::string& out)
 	return true;
 }
 
+// Single source for the session key list, shared by --help-keys and the runtime menu.
+static void convey_key_help(std::ostream &out, const char *nl)
+{
+	out << "Session commands. The escape key is Ctrl+A by default." << nl
+		<< "Press the escape key then one of these keys." << nl
+		<< "  q   quit" << nl
+		<< "  b   send a serial BREAK" << nl
+		<< "  r   pulse the serial DTR line to reset" << nl
+		<< "  h   toggle the hex view" << nl
+		<< "  e   toggle local echo" << nl
+		<< "  l   toggle logging" << nl
+		<< "  c   clear the screen" << nl
+		<< "  x   send a file" << nl
+		<< "  .   show connection status" << nl
+		<< "  ?   show this list" << nl;
+}
+
 static convey_setup_status convey_conf_setup(int argc, char **argv)
 {/*{{{*/
 	CLI::App app{"IPC through a named pipe, a serial port or a TCP endpoint.", "convey"};
@@ -488,6 +505,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		"       convey --bridge --pipe-server \\\\.\\pipe\\<name> tcp:<host>:<port>");
 	app.get_formatter()->column_width(34);
 	app.get_formatter()->long_option_alignment_ratio(6.f / 34.f);
+	app.get_formatter()->enable_footer_formatting(false);
 
 	std::string target;
 	std::string dev;
@@ -499,6 +517,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
 	bool eol_raw = false, eol_lf = false, eol_crlf = false;
 	bool list_ports = false;
+	bool help_keys = false;
 	uint32_t max_retries = 0;
 	std::string escape_arg;
 	std::string send_file;
@@ -553,8 +572,13 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF. Excludes --raw, --crlf.")->group("General");
 	app.add_flag("--crlf", eol_crlf, "Translate sent LF newlines to CRLF. Excludes --raw, --lf.")->group("General");
 	app.set_help_flag("-h,--help", "Display this help message and exit.")->group("General");
+	app.add_flag("--help-keys", help_keys, "List the runtime session key commands and exit.")->group("General");
 	app.set_version_flag("-V,--version", std::string(VERSION), "Output version information and exit.")->group("General");
 	app.add_flag("-v,--verbose", verbose, "Print some additional messages.")->group("General");
+
+	app.footer(
+		"Session commands are available at runtime. Press Ctrl+A then ? for the list,\n"
+		"or run convey --help-keys.");
 
 	try {
 		app.parse(argc, argv);
@@ -571,6 +595,11 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		std::cerr << "convey: " << e.what() << std::endl;
 		std::cerr << "Try 'convey --help' for more information." << std::endl;
 		return convey_setup_exit_err;
+	}
+
+	if (help_keys) {
+		convey_key_help(std::cout, "\n");
+		return convey_setup_exit_ok;
 	}
 
 	if (list_ports) {
@@ -1730,18 +1759,9 @@ static void convey_do_command(char cmd)
 		break;
 	}
 	case '?':
-		std::cout << "\r\n"
-			"convey commands (after the escape key):\r\n"
-			"  q  quit\r\n"
-			"  b  send a serial BREAK\r\n"
-			"  r  pulse the serial DTR line to reset\r\n"
-			"  h  toggle the hex view\r\n"
-			"  e  toggle local echo\r\n"
-			"  l  toggle logging\r\n"
-			"  c  clear the screen\r\n"
-			"  x  send a file\r\n"
-			"  .  show connection status\r\n"
-			"  ?  show this help\r\n" << std::flush;
+		std::cout << "\r\n";
+		convey_key_help(std::cout, "\r\n");
+		std::cout << std::flush;
 		break;
 	default:
 		break;
@@ -1769,6 +1789,10 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		is_console = is_console_handle(in) && is_console_handle(out);
 		if (is_console) {
 			setup_console();
+
+			// conf.escape is a control byte; OR 0x40 back to its letter.
+			char k = static_cast<char>(conf.escape | 0x40);
+			std::cerr << "convey: press Ctrl+" << k << " then ? for the list of commands\r\n";
 
 			/* One persistent watcher owns the console input for the whole run,
 			 * so the ctrl-a commands work even while waiting for a connection.

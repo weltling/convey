@@ -159,6 +159,8 @@ While a session is running, press `Ctrl+A` followed by a command key:
 - `.` prints the connection status (transport, endpoint, connected state, hex and read-only flags).
 - `?` lists the available commands.
 
+The same list is available without starting a session by running `convey --help-keys`.
+
 A BREAK on the serial console is how a Linux guest receives `Alt+SysRq` (see the Sysrq section below).
 
 The `--dtr` and `--rts` options set those serial control lines when the port is opened, each taking `on`, `off` or `pulse`. A `pulse` de-asserts the line for about 120 ms and then re-asserts it, the same reset pulse `Ctrl+A r` sends for DTR.
