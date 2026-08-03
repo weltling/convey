@@ -381,6 +381,13 @@ int main()
 		EXPECT(run_setup({"convey", "--exit-on", "[", "COM1"}) == convey_setup_exit_err);
 	}
 	{
+		// --expect pairs with --reply; counts must match and regexes be valid.
+		EXPECT(run_setup({"convey", "--expect", "login:", "--reply", "root\\r", "COM1"}) == convey_setup_ok);
+		EXPECT(expect_steps.size() == 1);
+		EXPECT(run_setup({"convey", "--expect", "login:", "COM1"}) == convey_setup_exit_err);
+		EXPECT(run_setup({"convey", "--expect", "[", "--reply", "x", "COM1"}) == convey_setup_exit_err);
+	}
+	{
 		// convey_tcp_tune turns on NODELAY and keepalive on a data socket.
 		WSADATA wsa;
 		EXPECT(0 == WSAStartup(MAKEWORD(2, 2), &wsa));

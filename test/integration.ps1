@@ -179,7 +179,7 @@ function Test-Expect {
         if ($exited) { Assert-Equal 0 $proc.ExitCode '--exit-on exits zero on match' }
         $client.Close()
     } finally {
-        if (-not $proc.HasExited) { $proc.Kill() }
+        Stop-Proc $proc
     }
 }
 
@@ -202,7 +202,32 @@ function Test-ExpectTimeout {
         if ($exited) { Assert-Equal 2 $proc.ExitCode '--exit-timeout exits non-zero' }
         $client.Close()
     } finally {
-        if (-not $proc.HasExited) { $proc.Kill() }
+        Stop-Proc $proc
+    }
+}
+
+function Test-ExpectReply {
+    # --expect waits for a pattern and sends the paired --reply, then continues
+    $port = Get-FreePort
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $Convey
+    $psi.Arguments = "tcp-listen:$port --no-xterm --expect login: --reply root\r"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        $s = $client.GetStream()
+        $b = [System.Text.Encoding]::ASCII.GetBytes("login: ")
+        $s.Write($b, 0, $b.Length); $s.Flush()
+        $got = Read-Text $s 16 3000
+        Assert-Equal "root`r" $got '--expect sends the reply on match'
+        $client.Close()
+    } finally {
+        Stop-Proc $proc
     }
 }
 
@@ -828,6 +853,7 @@ $tests = @(
     'Test-SendInit'
     'Test-Expect'
     'Test-ExpectTimeout'
+    'Test-ExpectReply'
     'Test-TcpListenRoundTrip'
     'Test-TcpListenIPv6'
     'Test-Bridge'
