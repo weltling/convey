@@ -98,8 +98,26 @@ public static int RunBreakExit(string app, string cmdline, string outFile, int s
 #endregion
 
 #region TCP transport
-function Test-ListPorts {
-    # --list-serial-ports enumerates serial ports (or reports none) and exits cleanly
+function Test-HelpCommands {
+    # --help points at --help-keys, which lists the runtime session commands
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $p = Start-Process -FilePath $Convey -ArgumentList "--help" `
+        -RedirectStandardOutput $outFile -PassThru -NoNewWindow -Wait
+    $out = [System.IO.File]::ReadAllText($outFile)
+    Assert-Equal $true ($out -match '--help-keys') '--help points at --help-keys'
+    Remove-Item $outFile -ErrorAction SilentlyContinue
+
+    $keysFile = [System.IO.Path]::GetTempFileName()
+    $p = Start-Process -FilePath $Convey -ArgumentList "--help-keys" `
+        -RedirectStandardOutput $keysFile -PassThru -NoNewWindow -Wait
+    $keys = [System.IO.File]::ReadAllText($keysFile)
+    Assert-Equal 0 $p.ExitCode '--help-keys exits cleanly'
+    Assert-Equal $true ($keys -match 'escape key') '--help-keys lists the session commands'
+    Assert-Equal $true ($keys -match 'q\s+quit') '--help-keys shows the command keys'
+    Remove-Item $keysFile -ErrorAction SilentlyContinue
+}
+
+function Test-ListPorts {    # --list-serial-ports enumerates serial ports (or reports none) and exits cleanly
     $outFile = [System.IO.Path]::GetTempFileName()
     $p = Start-Process -FilePath $Convey -ArgumentList "--list-serial-ports" `
         -RedirectStandardOutput $outFile -PassThru -NoNewWindow -Wait
@@ -620,12 +638,12 @@ function Test-CtrlAMenu {
     }
     Start-Sleep -Milliseconds 200
     $out = [System.IO.File]::ReadAllText($outFile)
-    Assert-Equal $true ($out -match 'convey commands') 'ctrl-a ? lists the commands'
+    Assert-Equal $true ($out -match 'Session commands') 'ctrl-a ? lists the commands'
     Assert-Equal $true ($out -match 'connected') 'ctrl-a . shows the status'
     # The console uses DISABLE_NEWLINE_AUTO_RETURN, so convey must emit CRLF or
     # its multi-line output staircases; a bare LF here would be the bug.
-    Assert-Equal $true ($out.Contains("convey commands (after the escape key):`r`n  q  quit`r`n")) 'ctrl-a ? uses CRLF line breaks'
-    Assert-Equal $false ($out.Contains("q  quit`n") -and -not $out.Contains("q  quit`r`n")) 'ctrl-a ? does not emit bare LF'
+    Assert-Equal $true ($out.Contains("one of these keys.`r`n  q   quit`r`n")) 'ctrl-a ? uses CRLF line breaks'
+    Assert-Equal $false ($out.Contains("q   quit`n") -and -not $out.Contains("q   quit`r`n")) 'ctrl-a ? does not emit bare LF'
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
 
@@ -848,6 +866,7 @@ function Test-Log {
 
 #region Runner
 $tests = @(
+    'Test-HelpCommands'
     'Test-ListPorts'
     'Test-SendFile'
     'Test-SendInit'
