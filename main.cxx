@@ -32,6 +32,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mstcpip.h>
+#include <afunix.h>
 #include <windows.h>
 #include <conio.h>
 #include <fcntl.h>
@@ -100,7 +101,9 @@ enum convey_transport {
 	convey_tp_pipe,
 	convey_tp_serial,
 	convey_tp_tcp_client,
-	convey_tp_tcp_server
+	convey_tp_tcp_server,
+	convey_tp_unix_client,
+	convey_tp_unix_server
 };
 
 enum convey_eol {
@@ -130,6 +133,8 @@ static convey_transport_spec convey_parse_transport(const std::string& spec)
 
 	const std::string tcp_pfx = "tcp:";
 	const std::string tcpl_pfx = "tcp-listen:";
+	const std::string unix_pfx = "unix:";
+	const std::string unixl_pfx = "unix-listen:";
 
 	if (0 == spec.compare(0, tcpl_pfx.size(), tcpl_pfx)) {
 		r.kind = convey_tp_tcp_server;
@@ -145,6 +150,14 @@ static convey_transport_spec convey_parse_transport(const std::string& spec)
 			r.host = hp.substr(0, pos);
 			r.port = hp.substr(pos + 1);
 		}
+	} else if (0 == spec.compare(0, unixl_pfx.size(), unixl_pfx)) {
+		r.kind = convey_tp_unix_server;
+		r.host = spec.substr(unixl_pfx.size());
+		r.ok = !r.host.empty();
+	} else if (0 == spec.compare(0, unix_pfx.size(), unix_pfx)) {
+		r.kind = convey_tp_unix_client;
+		r.host = spec.substr(unix_pfx.size());
+		r.ok = !r.host.empty();
 	}
 
 	return r;
@@ -502,6 +515,8 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		"       convey [options] \\\\.\\COM<num>\n"
 		"       convey [options] tcp:<host>:<port>\n"
 		"       convey [options] tcp-listen:<port>\n"
+		"       convey [options] unix:<path>\n"
+		"       convey [options] unix-listen:<path>\n"
 		"       convey --bridge --pipe-server \\\\.\\pipe\\<name> tcp:<host>:<port>");
 	app.get_formatter()->column_width(34);
 	app.get_formatter()->long_option_alignment_ratio(6.f / 34.f);
@@ -623,6 +638,10 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	if (!ts.ok) {
 		if (convey_tp_tcp_server == ts.kind) {
 			std::cerr << argv[0] << ": invalid listen endpoint '" << conf.pipe_path << "', expected tcp-listen:PORT" << std::endl;
+		} else if (convey_tp_unix_server == ts.kind) {
+			std::cerr << argv[0] << ": invalid listen endpoint '" << conf.pipe_path << "', expected unix-listen:PATH" << std::endl;
+		} else if (convey_tp_unix_client == ts.kind) {
+			std::cerr << argv[0] << ": invalid unix endpoint '" << conf.pipe_path << "', expected unix:PATH" << std::endl;
 		} else {
 			std::cerr << argv[0] << ": invalid tcp endpoint '" << conf.pipe_path << "', expected tcp:HOST:PORT" << std::endl;
 		}
@@ -855,6 +874,16 @@ static bool convey_transport_is_tcp(void)
 	return convey_tp_tcp_client == conf.transport || convey_tp_tcp_server == conf.transport;
 }/*}}}*/
 
+static bool convey_transport_is_unix(void)
+{/*{{{*/
+	return convey_tp_unix_client == conf.transport || convey_tp_unix_server == conf.transport;
+}/*}}}*/
+
+static bool convey_transport_is_socket(void)
+{/*{{{*/
+	return convey_transport_is_tcp() || convey_transport_is_unix();
+}/*}}}*/
+
 static void convey_bridge_fail(void)
 {/*{{{*/
 	is_error = true;
@@ -915,6 +944,9 @@ static void convey_final_cleanup(void)
 	if (INVALID_SOCKET != listen_sock) {
 		closesocket(listen_sock);
 		listen_sock = INVALID_SOCKET;
+	}
+	if (convey_tp_unix_server == conf.transport && !conf.tcp_host.empty()) {
+		DeleteFileA(conf.tcp_host.c_str());
 	}
 	if (wsa_started) {
 		WSACleanup();
@@ -1088,6 +1120,78 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 	return s;
 }/*}}}*/
 
+static bool convey_unix_set_addr(struct sockaddr_un& addr, const std::string& path, DWORD& err)
+{/*{{{*/
+	if (path.size() >= sizeof addr.sun_path) {
+		err = ERROR_BUFFER_OVERFLOW;
+		return false;
+	}
+	memset(&addr, 0, sizeof addr);
+	addr.sun_family = AF_UNIX;
+	memcpy(addr.sun_path, path.c_str(), path.size());
+	return true;
+}/*}}}*/
+
+static SOCKET convey_unix_connect(const std::string& path, DWORD& err)
+{/*{{{*/
+	struct sockaddr_un addr;
+	if (!convey_unix_set_addr(addr, path, err)) {
+		return INVALID_SOCKET;
+	}
+
+	SOCKET s = WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	if (INVALID_SOCKET == s) {
+		err = WSAGetLastError();
+		return INVALID_SOCKET;
+	}
+	if (0 != connect(s, reinterpret_cast<struct sockaddr *>(&addr), sizeof addr)) {
+		err = WSAGetLastError();
+		closesocket(s);
+		return INVALID_SOCKET;
+	}
+
+	return s;
+}/*}}}*/
+
+static SOCKET convey_unix_accept(const std::string& path, DWORD& err)
+{/*{{{*/
+	if (INVALID_SOCKET == listen_sock) {
+		struct sockaddr_un addr;
+		if (!convey_unix_set_addr(addr, path, err)) {
+			return INVALID_SOCKET;
+		}
+
+		/* A stale socket file blocks bind, so remove it first. */
+		DeleteFileA(path.c_str());
+
+		listen_sock = WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
+		if (INVALID_SOCKET == listen_sock) {
+			err = WSAGetLastError();
+			return INVALID_SOCKET;
+		}
+		if (0 != bind(listen_sock, reinterpret_cast<struct sockaddr *>(&addr), sizeof addr)) {
+			err = WSAGetLastError();
+			closesocket(listen_sock);
+			listen_sock = INVALID_SOCKET;
+			return INVALID_SOCKET;
+		}
+		if (0 != listen(listen_sock, 1)) {
+			err = WSAGetLastError();
+			closesocket(listen_sock);
+			listen_sock = INVALID_SOCKET;
+			return INVALID_SOCKET;
+		}
+	}
+
+	SOCKET s = accept(listen_sock, nullptr, nullptr);
+	if (INVALID_SOCKET == s) {
+		err = WSAGetLastError();
+		return INVALID_SOCKET;
+	}
+
+	return s;
+}/*}}}*/
+
 // Next backoff delay in ms: double the step, clamped to the cap.
 static size_t convey_backoff_next(size_t step, size_t cap)
 {/*{{{*/
@@ -1124,7 +1228,7 @@ static convey_setup_status convey_connect(int argc, char **argv)
 {/*{{{*/
 	DWORD rc;
 
-	if (convey_transport_is_tcp()) {
+	if (convey_transport_is_socket()) {
 		if (!convey_wsa_init()) {
 			restart_on_exit = false;
 			return convey_setup_exit_err;
@@ -1146,6 +1250,14 @@ static convey_setup_status convey_connect(int argc, char **argv)
 			conn_error = INVALID_HANDLE_VALUE == pipe;
 		} else if (convey_tp_tcp_server == conf.transport) {
 			SOCKET s = convey_tcp_accept(conf.tcp_port, rc);
+			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
+			conn_error = INVALID_HANDLE_VALUE == pipe;
+		} else if (convey_tp_unix_client == conf.transport) {
+			SOCKET s = convey_unix_connect(conf.tcp_host, rc);
+			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
+			conn_error = INVALID_HANDLE_VALUE == pipe;
+		} else if (convey_tp_unix_server == conf.transport) {
+			SOCKET s = convey_unix_accept(conf.tcp_host, rc);
 			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
 			conn_error = INVALID_HANDLE_VALUE == pipe;
 		} else {
@@ -1340,7 +1452,7 @@ static void convey_shutdown(void)
 		restore_console();
 	}
 
-	if (convey_tp_tcp_client == conf.transport || convey_tp_tcp_server == conf.transport) {
+	if (convey_transport_is_socket()) {
 		if (INVALID_HANDLE_VALUE != pipe) {
 			closesocket(reinterpret_cast<SOCKET>(pipe));
 			pipe = INVALID_HANDLE_VALUE;
@@ -1749,6 +1861,8 @@ static void convey_do_command(char cmd)
 		const char* tp = "pipe";
 		if (convey_transport_is_tcp()) {
 			tp = "tcp";
+		} else if (convey_transport_is_unix()) {
+			tp = "unix";
 		} else if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
 			tp = "serial";
 		}
@@ -1907,7 +2021,7 @@ restart:
 				DWORD bytes{0}, er{0};
 
 				bool rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
-				if (!rc || (convey_transport_is_tcp() && 0 == bytes)) {
+				if (!rc || (convey_transport_is_socket() && 0 == bytes)) {
 					if (!rc && !is_error) {
 						convey_error(er);
 					}
@@ -2051,7 +2165,7 @@ restart:
 				return;
 			}
 
-			if (convey_transport_is_tcp() && 0 == bytes) {
+			if (convey_transport_is_socket() && 0 == bytes) {
 				convey_console_fail();
 				return;
 			}
