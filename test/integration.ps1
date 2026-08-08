@@ -307,6 +307,42 @@ function Test-TcpListenIPv6 {
     }
     Remove-Item $inFile, $outFile -ErrorAction SilentlyContinue
 }
+
+function Test-UnixRoundTrip {
+    # Two convey processes exchange data over an AF_UNIX socket, one listens
+    # and one connects. PowerShell 5.1 has no AF_UNIX client, so convey plays
+    # both ends.
+    $sock = Join-Path $env:TEMP ("convey-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + ".sock")
+    $fromServer = "srv-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $fromClient = "cli-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+    $srvIn = [System.IO.Path]::GetTempFileName()
+    $srvOut = [System.IO.Path]::GetTempFileName()
+    $cliIn = [System.IO.Path]::GetTempFileName()
+    $cliOut = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllText($srvIn, $fromServer)
+    [System.IO.File]::WriteAllText($cliIn, $fromClient)
+    Remove-Item $sock -ErrorAction SilentlyContinue
+
+    $srv = Start-Process -FilePath $Convey -ArgumentList "unix-listen:$sock", "--no-xterm" `
+        -RedirectStandardInput $srvIn -RedirectStandardOutput $srvOut -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $cli = Start-Process -FilePath $Convey -ArgumentList "unix:$sock", "--no-xterm" `
+            -RedirectStandardInput $cliIn -RedirectStandardOutput $cliOut -PassThru -NoNewWindow
+        try {
+            Start-Sleep -Milliseconds 800
+        } finally {
+            Stop-Proc $cli
+        }
+    } finally {
+        Stop-Proc $srv
+    }
+
+    Start-Sleep -Milliseconds 200
+    Assert-Equal $fromServer ([System.IO.File]::ReadAllText($cliOut).Trim()) 'unix: server stdin -> client stdout'
+    Assert-Equal $fromClient ([System.IO.File]::ReadAllText($srvOut).Trim()) 'unix: client stdin -> server stdout'
+    Remove-Item $srvIn, $srvOut, $cliIn, $cliOut, $sock -ErrorAction SilentlyContinue
+}
 #endregion
 
 #region Bridge
@@ -875,6 +911,7 @@ $tests = @(
     'Test-ExpectReply'
     'Test-TcpListenRoundTrip'
     'Test-TcpListenIPv6'
+    'Test-UnixRoundTrip'
     'Test-Bridge'
     'Test-TcpClientReconnect'
     'Test-ReconnectStatus'

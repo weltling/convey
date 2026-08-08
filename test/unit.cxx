@@ -72,6 +72,28 @@ int main()
 		EXPECT(!s.ok);
 		EXPECT(s.kind == convey_tp_tcp_server);
 	}
+	{
+		convey_transport_spec s = convey_parse_transport("unix:/tmp/convey.sock");
+		EXPECT(s.ok);
+		EXPECT(s.kind == convey_tp_unix_client);
+		EXPECT(s.host == "/tmp/convey.sock");
+	}
+	{
+		convey_transport_spec s = convey_parse_transport("unix-listen:C:\\tmp\\convey.sock");
+		EXPECT(s.ok);
+		EXPECT(s.kind == convey_tp_unix_server);
+		EXPECT(s.host == "C:\\tmp\\convey.sock");
+	}
+	{
+		convey_transport_spec s = convey_parse_transport("unix:");
+		EXPECT(!s.ok);
+		EXPECT(s.kind == convey_tp_unix_client);
+	}
+	{
+		convey_transport_spec s = convey_parse_transport("unix-listen:");
+		EXPECT(!s.ok);
+		EXPECT(s.kind == convey_tp_unix_server);
+	}
 
 	EXPECT(convey_parity_from_string("even") == EVENPARITY);
 	EXPECT(convey_parity_from_string("NO") == NOPARITY);
@@ -218,6 +240,15 @@ int main()
 		EXPECT(conf.transport == convey_tp_tcp_client);
 		EXPECT(conf.tcp_host == "127.0.0.1");
 		EXPECT(conf.tcp_port == "4445");
+	}
+	{
+		// A unix endpoint stores the socket path.
+		EXPECT(run_setup({"convey", "unix:C:\\tmp\\convey.sock"}) == convey_setup_ok);
+		EXPECT(conf.transport == convey_tp_unix_client);
+		EXPECT(conf.tcp_host == "C:\\tmp\\convey.sock");
+		EXPECT(run_setup({"convey", "unix-listen:C:\\tmp\\convey.sock"}) == convey_setup_ok);
+		EXPECT(conf.transport == convey_tp_unix_server);
+		EXPECT(conf.tcp_host == "C:\\tmp\\convey.sock");
 	}
 	{
 		// --dev is an alias for the positional endpoint.
