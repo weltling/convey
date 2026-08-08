@@ -93,6 +93,16 @@ This targets a Windows guest whose serial port is available on TCP, as done by Q
 The bridge carries raw bytes only, so there's no console, no CRLF trimming and no xterm handling. It reconnects on its own, which lets it survive target resets.
 
 
+# Usage over a Unix domain socket
+
+Convey also speaks AF_UNIX stream sockets, which are available on Windows 10 build 17063 and newer.
+
+- Invoke `convey.exe unix:<path>` to connect to a listening socket.
+- Invoke `convey.exe unix-listen:<path>` to create the socket and accept a single connection.
+
+The `<path>` is a normal filesystem path. The listener removes a stale socket file before it binds and removes its own socket file on exit. Only stream sockets on a filesystem path are supported. Windows has no abstract sockets. The `--poll` and `--reconnect` options apply here as they do for TCP.
+
+
 # Logging
 
 Convey can log the session to a file, for example to keep a boot or panic log that would otherwise scroll away. `--log` captures the full session; the received stream already includes what you type on an echoing console, but a non-echoing target (or a one-way stream) needs the sent stream too.
