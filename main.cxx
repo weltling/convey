@@ -73,6 +73,9 @@ static std::atomic<bool> hex_on{false};
 static std::atomic<bool> logging_on{true};
 static std::atomic<bool> file_sent{false};
 static std::atomic<bool> echo_on{false};
+static std::atomic<uint64_t> bytes_rx{0};
+static std::atomic<uint64_t> bytes_tx{0};
+static std::atomic<uint64_t> conn_since{0};
 static std::regex exit_re;
 static bool have_exit = false;
 static std::atomic<bool> exit_matched{false};
@@ -884,6 +887,22 @@ static bool convey_transport_is_socket(void)
 	return convey_transport_is_tcp() || convey_transport_is_unix();
 }/*}}}*/
 
+// Compact elapsed time, seconds under a minute, else with minutes and hours.
+static std::string convey_fmt_uptime(uint64_t ms)
+{/*{{{*/
+	unsigned long s = static_cast<unsigned long>(ms / 1000);
+	unsigned long h = s / 3600, m = (s % 3600) / 60, sec = s % 60;
+	char b[48];
+	if (h) {
+		wsprintfA(b, "%luh %02lum %02lus", h, m, sec);
+	} else if (m) {
+		wsprintfA(b, "%lum %02lus", m, sec);
+	} else {
+		wsprintfA(b, "%lus", sec);
+	}
+	return b;
+}/*}}}*/
+
 static void convey_bridge_fail(void)
 {/*{{{*/
 	is_error = true;
@@ -1301,6 +1320,7 @@ static convey_setup_status convey_connect(int argc, char **argv)
 	if (conf.verbose) {
 		std::cout << "Connection established in " << (elapsed/1000) << " seconds" << std::endl;
 	}
+	conn_since = GetTickCount64();
 
 	/* TODO Expand on this handling. */
 	DWORD t = GetFileType(pipe);
@@ -1481,6 +1501,10 @@ static bool convey_read_pipe(HANDLE h, char (& buf)[BUF_SIZE], DWORD* bytes, HAN
 	er = GetLastError();
 	rc = convey_get_ov_result(h, &ov, bytes, rc, er);
 
+	if (rc && h == pipe && *bytes) {
+		bytes_rx += *bytes;
+	}
+
 	return rc;
 }
 
@@ -1496,6 +1520,9 @@ static bool convey_write_pipe(HANDLE h, const char* buf, DWORD* bytes, HANDLE e,
 		rc = convey_get_ov_result(h, &ov, &written, rc, er);
 		if (!rc) {
 			*bytes = off;
+			if (h == pipe && off) {
+				bytes_tx += off;
+			}
 			return false;
 		}
 		if (0 == written) {
@@ -1505,6 +1532,9 @@ static bool convey_write_pipe(HANDLE h, const char* buf, DWORD* bytes, HANDLE e,
 	}
 
 	*bytes = off;
+	if (h == pipe && off) {
+		bytes_tx += off;
+	}
 	return true;
 }
 
@@ -1869,7 +1899,9 @@ static void convey_do_command(char cmd)
 		std::cout << "\r\nconvey: " << tp << " " << conf.pipe_path << ", "
 			<< (INVALID_HANDLE_VALUE == pipe ? "disconnected" : "connected")
 			<< ", hex " << (hex_on ? "on" : "off")
-			<< ", read-only " << (conf.read_only ? "on" : "off") << "\r\n" << std::flush;
+			<< ", read-only " << (conf.read_only ? "on" : "off")
+			<< ", rx " << bytes_rx.load() << ", tx " << bytes_tx.load()
+			<< ", up " << convey_fmt_uptime(GetTickCount64() - conn_since.load()) << "\r\n" << std::flush;
 		break;
 	}
 	case '?':
