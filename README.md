@@ -166,7 +166,7 @@ While a session is running, press `Ctrl+A` followed by a command key:
 - `l` toggles logging on and off. With no `--log` configured it starts logging to an auto-named `convey-<timestamp>.log` session file in the working directory.
 - `c` clears the screen.
 - `x` sends a file: it prompts for a path and streams the file to the target.
-- `.` prints the connection status (transport, endpoint, connected state, hex and read-only flags).
+- `.` prints the connection status. It shows the transport, endpoint, connected state, hex and read-only flags, the received and sent byte counts and the connection uptime.
 - `?` lists the available commands.
 
 The same list is available without starting a session by running `convey --help-keys`.
