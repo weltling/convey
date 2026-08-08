@@ -121,6 +121,12 @@ int main()
 	EXPECT(convey_trim_crlf("", 0) == 0);
 	EXPECT(convey_trim_crlf("x", 1) == 1);
 
+	// Uptime formatting picks the compact unit set for the magnitude.
+	EXPECT(convey_fmt_uptime(0) == "0s");
+	EXPECT(convey_fmt_uptime(5000) == "5s");
+	EXPECT(convey_fmt_uptime(64000) == "1m 04s");
+	EXPECT(convey_fmt_uptime(3723000) == "1h 02m 03s");
+
 	{
 		char rec[16];
 		DWORD n = convey_log_session_record(rec, "hi", 2, true);

@@ -676,6 +676,7 @@ function Test-CtrlAMenu {
     $out = [System.IO.File]::ReadAllText($outFile)
     Assert-Equal $true ($out -match 'Session commands') 'ctrl-a ? lists the commands'
     Assert-Equal $true ($out -match 'connected') 'ctrl-a . shows the status'
+    Assert-Equal $true ($out -match 'rx \d+, tx \d+, up ') 'ctrl-a . shows byte and uptime stats'
     # The console uses DISABLE_NEWLINE_AUTO_RETURN, so convey must emit CRLF or
     # its multi-line output staircases; a bare LF here would be the bug.
     Assert-Equal $true ($out.Contains("one of these keys.`r`n  q   quit`r`n")) 'ctrl-a ? uses CRLF line breaks'
