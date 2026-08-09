@@ -653,6 +653,31 @@ function Test-CtrlABreak {
     Remove-Item $inFile, $errFile -ErrorAction SilentlyContinue
 }
 
+function Test-CtrlAUnknownCommand {
+    # An unrecognized key after the escape warns and points at the ? list.
+    $port = Get-FreePort
+    $inFile = [System.IO.Path]::GetTempFileName()
+    [System.IO.File]::WriteAllBytes($inFile, [byte[]](1, 0x2b))
+    $errFile = [System.IO.Path]::GetTempFileName()
+
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "tcp-listen:$port", "--no-xterm" `
+        -RedirectStandardInput $inFile -RedirectStandardError $errFile -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $client.Connect('127.0.0.1', $port)
+        Start-Sleep -Milliseconds 500
+        $client.Close()
+    } finally {
+        Stop-Proc $p
+    }
+    Start-Sleep -Milliseconds 200
+    $err = [System.IO.File]::ReadAllText($errFile)
+    Assert-Equal $true ($err -match "no command for '\+'") 'ctrl-a with an unknown key warns'
+    Remove-Item $inFile, $errFile -ErrorAction SilentlyContinue
+}
+
 function Test-CtrlAMenu {
     # ctrl-a ? lists the commands and ctrl-a . prints the connection status
     $port = Get-FreePort
@@ -923,6 +948,7 @@ $tests = @(
     'Test-CtrlAQuit'
     'Test-CustomEscape'
     'Test-CtrlABreak'
+    'Test-CtrlAUnknownCommand'
     'Test-CtrlAMenu'
     'Test-CtrlCClean'
     'Test-LineEndings'

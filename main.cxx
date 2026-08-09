@@ -1915,8 +1915,17 @@ static void convey_do_command(char cmd)
 		convey_key_help(std::cout, "\r\n");
 		std::cout << std::flush;
 		break;
-	default:
+	default: {
+		unsigned char c = static_cast<unsigned char>(cmd);
+		if (c >= 0x20 && c < 0x7f) {
+			std::cerr << "\r\nconvey: no command for '" << static_cast<char>(c) << "', press ? for the list\r\n";
+		} else {
+			char hx[8];
+			wsprintfA(hx, "0x%02x", c);
+			std::cerr << "\r\nconvey: no command for " << hx << ", press ? for the list\r\n";
+		}
 		break;
+	}
 	}
 }/*}}}*/
 
