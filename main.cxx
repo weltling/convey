@@ -887,6 +887,12 @@ static bool convey_transport_is_socket(void)
 	return convey_transport_is_tcp() || convey_transport_is_unix();
 }/*}}}*/
 
+// A socket read or write failure is a disconnect, quiet unless verbose.
+static bool convey_report_io_error(void)
+{/*{{{*/
+	return conf.verbose || !convey_transport_is_socket();
+}/*}}}*/
+
 // Compact elapsed time, seconds under a minute, else with minutes and hours.
 static std::string convey_fmt_uptime(uint64_t ms)
 {/*{{{*/
@@ -2054,7 +2060,7 @@ restart:
 
 				bool rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
 				if (!rc || (convey_transport_is_socket() && 0 == bytes)) {
-					if (!rc && !is_error) {
+					if (!rc && !is_error && convey_report_io_error()) {
 						convey_error(er);
 					}
 					convey_bridge_fail();
@@ -2097,7 +2103,7 @@ restart:
 					convey_log_sent(buf, bytes);
 					rc = convey_write_pipe(pipe, buf, &bytes, e_pipe_w, er);
 					if (!rc) {
-						if (!is_error) {
+						if (!is_error && convey_report_io_error()) {
 							convey_error(er);
 						}
 						convey_bridge_fail();
@@ -2163,7 +2169,7 @@ restart:
 				convey_log_sent(s.data(), w);
 				rc = convey_write_pipe(pipe, s.data(), &w, e_pipe_w, er);
 				if (!rc) {
-					if (!is_error) {
+					if (!is_error && convey_report_io_error()) {
 						convey_error(er);
 					}
 					convey_console_fail();
@@ -2190,7 +2196,7 @@ restart:
 
 			rc = convey_read_pipe(pipe, buf, &bytes, e_pipe_r, er);
 			if (!rc) {
-				if (!is_error) {
+				if (!is_error && convey_report_io_error()) {
 					convey_error(er);
 				}
 				convey_console_fail();

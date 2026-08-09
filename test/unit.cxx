@@ -128,6 +128,20 @@ int main()
 	EXPECT(convey_fmt_uptime(3723000) == "1h 02m 03s");
 
 	{
+		// Socket teardown errors stay quiet unless verbose; pipe and serial report.
+		conf = convey_conf{};
+		conf.transport = convey_tp_unix_server;
+		EXPECT(!convey_report_io_error());
+		conf.transport = convey_tp_tcp_client;
+		EXPECT(!convey_report_io_error());
+		conf.verbose = true;
+		EXPECT(convey_report_io_error());
+		conf.verbose = false;
+		conf.transport = convey_tp_pipe;
+		EXPECT(convey_report_io_error());
+	}
+
+	{
 		char rec[16];
 		DWORD n = convey_log_session_record(rec, "hi", 2, true);
 		EXPECT(n == 4);
