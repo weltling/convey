@@ -1,7 +1,7 @@
 
 # The version defaults to `git describe`; override with `nmake VERSION=x`.
 # Falls back to the literal below when git is unavailable (e.g. tarballs).
-VERSION=v0.7.0
+VERSION=v0.10.0
 !IF [git describe --tags --always --dirty 2> NUL > convey_gitver.tmp] == 0
 !	IF [for /f "usebackq delims=" %v in (convey_gitver.tmp) do @echo VERSION=%v> convey_gitver.mk] == 0
 !		INCLUDE convey_gitver.mk
