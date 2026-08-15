@@ -113,7 +113,9 @@ int main()
 
 	EXPECT(convey_baud_is_valid(CBR_9600));
 	EXPECT(convey_baud_is_valid(CBR_115200));
-	EXPECT(!convey_baud_is_valid(12345));
+	EXPECT(convey_baud_is_valid(250000));
+	EXPECT(convey_baud_is_valid(921600));
+	EXPECT(!convey_baud_is_valid(0));
 
 	EXPECT(convey_trim_crlf("ab\r\n", 4) == 3);
 	EXPECT(convey_trim_crlf("ab\n", 3) == 3);
@@ -311,8 +313,13 @@ int main()
 		EXPECT(conf.flow_control == convey_flow_control_rtscts);
 	}
 	{
+		// A custom baud rate within range is accepted; the driver is the final say.
+		EXPECT(run_setup({"convey", "--baud", "250000", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.baud == 250000);
+	}
+	{
 		// Invalid serial values are rejected.
-		EXPECT(run_setup({"convey", "--baud", "12345", "COM1"}) == convey_setup_exit_err);
+		EXPECT(run_setup({"convey", "--baud", "0", "COM1"}) == convey_setup_exit_err);
 		EXPECT(run_setup({"convey", "--parity", "bogus", "COM1"}) == convey_setup_exit_err);
 		EXPECT(run_setup({"convey", "--stop-bits", "3", "COM1"}) == convey_setup_exit_err);
 		EXPECT(run_setup({"convey", "--flow-control", "bad", "COM1"}) == convey_setup_exit_err);
