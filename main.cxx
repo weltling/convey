@@ -312,6 +312,8 @@ static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED* ov, DWORD* bytes, bool& 
 	return true;
 }/*}}}*/
 
+// Named rates are always valid; any other positive rate is left for the driver
+// to accept or reject through SetCommState, the real authority.
 static bool convey_baud_is_valid(uint32_t b)
 {
 	switch (b) {
@@ -331,7 +333,7 @@ static bool convey_baud_is_valid(uint32_t b)
 		case CBR_256000:
 			return true;
 		default:
-			return false;
+			return b > 0;
 	}
 }
 
@@ -565,7 +567,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("--reply", expect_replies, "Reply to send when the matching --expect is seen (escapes allowed).")->group("Connection")->type_name("STR")->allow_extra_args(false);
 	app.add_option("--expect-timeout", expect_timeout, "Fail if the --expect sequence is not completed in N seconds.")->group("Connection")->capture_default_str()->type_name("SEC");
 
-	app.add_option("-b,--baud", baud, "Baud rate in bps, only relevant for serial communication.")->group("Serial")->capture_default_str()->type_name("RATE");
+	app.add_option("-b,--baud", baud, "Baud rate in bps for serial, a standard or custom rate the device supports.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
 	app.add_option("--parity", parity, "Parity scheme (even, mark, no, odd, space).")->group("Serial")->capture_default_str()->type_name("SCHEME");
 	app.add_option("--stop-bits", stop_bits, "Stop bits (1, 1.5, 2).")->group("Serial")->capture_default_str()->type_name("BITS");
