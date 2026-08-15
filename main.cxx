@@ -501,6 +501,7 @@ static void convey_key_help(std::ostream &out, const char *nl)
 		<< "  q   quit" << nl
 		<< "  b   send a serial BREAK" << nl
 		<< "  r   pulse the serial DTR line to reset" << nl
+		<< "  m   show the modem line status" << nl
 		<< "  h   toggle the hex view" << nl
 		<< "  e   toggle local echo" << nl
 		<< "  l   toggle logging" << nl
@@ -1844,6 +1845,23 @@ static void convey_do_command(char cmd)
 			}
 		} else {
 			std::cerr << "\r\nconvey: line control is only supported on a serial port\r\n";
+		}
+		break;
+	case 'm':
+		if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
+			DWORD st = 0;
+			if (GetCommModemStatus(pipe, &st)) {
+				std::cout << "\r\nconvey: modem"
+					<< " cts " << ((st & MS_CTS_ON) ? "on" : "off")
+					<< ", dsr " << ((st & MS_DSR_ON) ? "on" : "off")
+					<< ", dcd " << ((st & MS_RLSD_ON) ? "on" : "off")
+					<< ", ri " << ((st & MS_RING_ON) ? "on" : "off")
+					<< "\r\n" << std::flush;
+			} else {
+				std::cerr << "\r\nconvey: could not read the modem status\r\n";
+			}
+		} else {
+			std::cerr << "\r\nconvey: modem status is only supported on a serial port\r\n";
 		}
 		break;
 	case 'h':
