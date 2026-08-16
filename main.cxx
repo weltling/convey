@@ -230,6 +230,7 @@ struct convey_conf {
 	uint8_t parity;
 	uint8_t stop_bits;
 	uint8_t byte_size;
+	uint32_t break_ms;
 	convey_flow_control flow_control;
 	convey_transport transport;
 	std::string tcp_host;
@@ -534,6 +535,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string parity = "no", stop_bits = "1", flow_control = "none";
 	std::string dtr_arg, rts_arg;
 	uint32_t baud = CBR_115200, byte_size = 8;
+	uint32_t break_ms = 300;
 	double poll = 0.0;
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
 	bool eol_raw = false, eol_lf = false, eol_crlf = false;
@@ -571,6 +573,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
 	app.add_option("--parity", parity, "Parity scheme (even, mark, no, odd, space).")->group("Serial")->capture_default_str()->type_name("SCHEME");
 	app.add_option("--stop-bits", stop_bits, "Stop bits (1, 1.5, 2).")->group("Serial")->capture_default_str()->type_name("BITS");
+	app.add_option("--break-ms", break_ms, "How long the ctrl-a b serial BREAK is held, in ms.")->group("Serial")->capture_default_str()->type_name("MS");
 	app.add_option("--flow-control", flow_control, "Flow control (none, xon/xoff, rts/cts, dsr/dtr).")->group("Serial")->capture_default_str()->type_name("MODE");
 	app.add_option("--dtr", dtr_arg, "Set the serial DTR line (on, off, pulse).")->group("Serial")->type_name("STATE");
 	app.add_option("--rts", rts_arg, "Set the serial RTS line (on, off, pulse).")->group("Serial")->type_name("STATE");
@@ -733,6 +736,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 		return convey_setup_exit_err;
 	}
 	conf.baud = baud;
+	conf.break_ms = break_ms;
 
 	uint8_t par = convey_parity_from_string(parity);
 	if (((uint8_t)-1) == par) {
@@ -1830,7 +1834,7 @@ static void convey_do_command(char cmd)
 	case 'b':
 		if (INVALID_HANDLE_VALUE != pipe && FILE_TYPE_CHAR == GetFileType(pipe)) {
 			SetCommBreak(pipe);
-			std::this_thread::sleep_for(std::chrono::milliseconds(300));
+			std::this_thread::sleep_for(std::chrono::milliseconds(conf.break_ms));
 			ClearCommBreak(pipe);
 			if (conf.verbose) {
 				std::cout << "\r\nconvey: break sent\r\n" << std::flush;
