@@ -159,7 +159,7 @@ The related `--poll` option keeps retrying the initial connection for the given 
 While a session is running, press `Ctrl+A` followed by a command key:
 
 - `q` quits convey.
-- `b` sends a serial BREAK. It is held for about 300 ms and only works on a physical COM port; on a named pipe or TCP connection convey reports that break needs a serial port.
+- `b` sends a serial BREAK. It is held for the `--break-ms` duration, 300 ms by default, and only works on a physical COM port. On a named pipe or TCP connection convey reports that break needs a serial port.
 - `r` sends a reset pulse on the serial DTR line: it de-asserts DTR for about 120 ms, then re-asserts it, which resets many boards. It works only on a physical COM port.
 - `m` shows the modem line status, the CTS, DSR, DCD and RI inputs. It works only on a physical COM port.
 - `h` toggles the hex view of the received stream.
