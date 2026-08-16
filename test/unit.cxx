@@ -300,6 +300,7 @@ int main()
 		EXPECT(conf.stop_bits == ONESTOPBIT);
 		EXPECT(conf.byte_size == 8);
 		EXPECT(conf.flow_control == convey_flow_control_none);
+		EXPECT(conf.break_ms == 300);
 		EXPECT(!restart_on_exit);
 	}
 	{
@@ -316,6 +317,11 @@ int main()
 		// A custom baud rate within range is accepted; the driver is the final say.
 		EXPECT(run_setup({"convey", "--baud", "250000", "COM1"}) == convey_setup_ok);
 		EXPECT(conf.baud == 250000);
+	}
+	{
+		// The BREAK hold time is configurable.
+		EXPECT(run_setup({"convey", "--break-ms", "500", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.break_ms == 500);
 	}
 	{
 		// Invalid serial values are rejected.
