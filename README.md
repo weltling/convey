@@ -160,7 +160,7 @@ While a session is running, press `Ctrl+A` followed by a command key:
 
 - `q` quits convey.
 - `b` sends a serial BREAK. It is held for the `--break-ms` duration, 300 ms by default, and only works on a physical COM port. On a named pipe or TCP connection convey reports that break needs a serial port.
-- `r` sends a reset pulse on the serial DTR line: it de-asserts DTR for about 120 ms, then re-asserts it, which resets many boards. It works only on a physical COM port.
+- `r` sends a reset pulse on the serial DTR line. It de-asserts DTR for the `--reset-ms` time, 120 ms by default, then re-asserts it, which resets many boards. It works only on a physical COM port.
 - `m` shows the modem line status, the CTS, DSR, DCD and RI inputs. It works only on a physical COM port.
 - `h` toggles the hex view of the received stream.
 - `e` toggles local echo, showing typed input on non-echoing targets.
@@ -174,7 +174,7 @@ The same list is available without starting a session by running `convey --help-
 
 A BREAK on the serial console is how a Linux guest receives `Alt+SysRq` (see the Sysrq section below).
 
-The `--dtr` and `--rts` options set those serial control lines when the port is opened, each taking `on`, `off` or `pulse`. A `pulse` de-asserts the line for about 120 ms and then re-asserts it, the same reset pulse `Ctrl+A r` sends for DTR.
+The `--dtr` and `--rts` options set those serial control lines when the port is opened, each taking `on`, `off` or `pulse`. A `pulse` de-asserts the line for the `--reset-ms` time, 120 ms by default, and then re-asserts it, the same reset pulse `Ctrl+A r` sends for DTR.
 
 The command prefix defaults to `Ctrl+A` and can be changed with `--escape`, which accepts a control-key spec such as `^]`, `ctrl-]`, `ctrl+x` or `C-x`. This helps when `Ctrl+A` collides with a shell or readline binding.
 
