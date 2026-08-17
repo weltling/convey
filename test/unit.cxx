@@ -301,6 +301,7 @@ int main()
 		EXPECT(conf.byte_size == 8);
 		EXPECT(conf.flow_control == convey_flow_control_none);
 		EXPECT(conf.break_ms == 300);
+		EXPECT(conf.reset_ms == 120);
 		EXPECT(!restart_on_exit);
 	}
 	{
@@ -322,6 +323,11 @@ int main()
 		// The BREAK hold time is configurable.
 		EXPECT(run_setup({"convey", "--break-ms", "500", "COM1"}) == convey_setup_ok);
 		EXPECT(conf.break_ms == 500);
+	}
+	{
+		// The DTR/RTS pulse width is configurable.
+		EXPECT(run_setup({"convey", "--reset-ms", "50", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.reset_ms == 50);
 	}
 	{
 		// Invalid serial values are rejected.
