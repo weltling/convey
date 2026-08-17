@@ -174,8 +174,8 @@ static DWORD convey_trim_crlf(const char* buf, DWORD bytes)
 	return bytes;
 }/*}}}*/
 
-/* Re-encode the outgoing newlines per the chosen policy. In auto mode the
- * historical behavior is kept: raw with xterm, trailing CRLF trimmed to LF
+/* Encode the outgoing newlines per the chosen policy. In auto mode the
+ * historical behavior is kept, raw with xterm, trailing CRLF trimmed to LF
  * with --no-xterm. */
 static std::string convey_encode_eol(const char* buf, DWORD bytes, convey_eol mode, bool no_xterm)
 {/*{{{*/
@@ -314,7 +314,7 @@ static DWORD convey_get_ov_result(HANDLE h, OVERLAPPED* ov, DWORD* bytes, bool& 
 	return true;
 }/*}}}*/
 
-// Named rates are always valid; any other positive rate is left for the driver
+// Named rates are always valid. Any other positive rate is left for the driver
 // to accept or reject through SetCommState, the real authority.
 static bool convey_baud_is_valid(uint32_t b)
 {
@@ -454,7 +454,7 @@ static void convey_print_serial_ports(void)
 	}
 }
 
-// Decode backslash escapes (\r \n \t \0 \\ \xHH) into raw bytes; false on a
+// Decode backslash escapes (\r \n \t \0 \\ \xHH) into raw bytes, false on a
 // malformed \x.
 static bool convey_unescape(const std::string& in, std::string& out)
 {
@@ -554,7 +554,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::vector<std::string> expect_pats, expect_replies;
 	uint32_t expect_timeout = 0;
 
-	// Endpoint given as the first positional argument; --dev is an alias.
+	// Endpoint given as the first positional argument. --dev is an alias.
 	app.add_option("target", target, "")->group("");
 
 	app.add_option("-d,--dev", dev, "Path to the named pipe or COM device.")->group("Connection")->type_name("PATH");
@@ -576,7 +576,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("--parity", parity, "Parity scheme (even, mark, no, odd, space).")->group("Serial")->capture_default_str()->type_name("SCHEME");
 	app.add_option("--stop-bits", stop_bits, "Stop bits (1, 1.5, 2).")->group("Serial")->capture_default_str()->type_name("BITS");
 	app.add_option("--break-ms", break_ms, "How long the ctrl-a b serial BREAK is held, in ms.")->group("Serial")->capture_default_str()->type_name("MS");
-	app.add_option("--reset-ms", reset_ms, "How long a DTR or RTS pulse de-asserts the line, in ms.")->group("Serial")->capture_default_str()->type_name("MS");
+	app.add_option("--reset-ms", reset_ms, "How long a DTR or RTS pulse deasserts the line, in ms.")->group("Serial")->capture_default_str()->type_name("MS");
 	app.add_option("--flow-control", flow_control, "Flow control (none, xon/xoff, rts/cts, dsr/dtr).")->group("Serial")->capture_default_str()->type_name("MODE");
 	app.add_option("--dtr", dtr_arg, "Set the serial DTR line (on, off, pulse).")->group("Serial")->type_name("STATE");
 	app.add_option("--rts", rts_arg, "Set the serial RTS line (on, off, pulse).")->group("Serial")->type_name("STATE");
@@ -593,7 +593,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--read-only", read_only, "Monitor only and do not send anything to the endpoint.")->group("General");
 	app.add_flag("--timestamps", timestamps, "Prefix each received line with a local time stamp.")->group("General");
 	app.add_flag("--hex", hex, "Show the received stream as a hex dump instead of text.")->group("General");
-	app.add_flag("--local-echo", local_echo, "Echo typed input locally for non-echoing targets.")->group("General");
+	app.add_flag("--local-echo", local_echo, "Echo typed input locally for targets that do not echo.")->group("General");
 	app.add_option("--escape", escape_arg, "Escape key for the ctrl-a commands (^A, ctrl-], ...).")->group("General")->type_name("KEY");
 	app.add_flag("--raw", eol_raw, "Send input with no newline translation. Excludes --lf, --crlf.")->group("General");
 	app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF. Excludes --raw, --crlf.")->group("General");
@@ -802,7 +802,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	conf.log_append = log_append;
 
 	// The log options write to independent files and may be combined,
-	// but two of them must not name the same file: the handles do not
+	// but two of them must not name the same file. The handles do not
 	// share write access, and mixing raw and marked output would
 	// corrupt the file.
 	const std::string* log_paths[] = { &conf.log_path, &conf.log_recv_path, &conf.log_send_path };
@@ -1124,7 +1124,7 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 		BOOL reuse = TRUE;
 		setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof reuse);
 
-		/* Accept both IPv6 and IPv4 (mapped) connections. */
+		/* Accept both IPv6 and IPv4-mapped connections. */
 		DWORD v6only = 0;
 		setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char *>(&v6only), sizeof v6only);
 
@@ -1228,7 +1228,7 @@ static SOCKET convey_unix_accept(const std::string& path, DWORD& err)
 	return s;
 }/*}}}*/
 
-// Next backoff delay in ms: double the step, clamped to the cap.
+// Next backoff delay in ms, double the step, clamped to the cap.
 static size_t convey_backoff_next(size_t step, size_t cap)
 {/*{{{*/
 	size_t n = step * 2;
@@ -1240,7 +1240,7 @@ static void convey_set_line(HANDLE h, bool dtr, bool on)
 	EscapeCommFunction(h, dtr ? (on ? SETDTR : CLRDTR) : (on ? SETRTS : CLRRTS));
 }/*}}}*/
 
-// Apply a DTR/RTS action; pulse briefly de-asserts the line then re-asserts it.
+// Apply a DTR/RTS action, a pulse briefly deasserts the line then reasserts it.
 static void convey_apply_line(HANDLE h, bool dtr, convey_line action)
 {/*{{{*/
 	switch (action) {
@@ -1305,8 +1305,8 @@ static convey_setup_status convey_connect(int argc, char **argv)
 			break;
 		}
 
-		/* On a post-drop reconnect keep retrying with exponential backoff,
-		 * bounded by --max-retries; the initial connect stays within the
+		/* On a reconnect after a drop keep retrying with exponential backoff,
+		 * bounded by --max-retries. The initial connect stays within the
 		 * --poll window. */
 		bool retry;
 		if (is_reconnect && conf.reconnect) {
@@ -1498,7 +1498,7 @@ static void convey_shutdown(void)
 		CLOSE_HANDLE(pipe);
 	}
 	CLOSE_HANDLE(bpipe);
-	/* in/out are the process standard handles; never close them, or a
+	/* in/out are the process standard handles, never close them, or a
 	 * redirected stdio pipe would break across a --reconnect restart. */
 	CLOSE_HANDLE(e_pipe_w);
 	CLOSE_HANDLE(e_pipe_r);
@@ -1652,7 +1652,7 @@ static bool convey_read_console(HANDLE h, char* buf, DWORD cap, DWORD* bytes)
 	return true;
 }/*}}}*/
 
-// Stream a file to the target, optionally pacing per line; console-side only.
+// Stream a file to the target, optionally pacing per line, console side only.
 static bool convey_send_file(const std::string& path)
 {/*{{{*/
 	if (INVALID_HANDLE_VALUE == pipe) {
@@ -1709,7 +1709,7 @@ static bool convey_send_file(const std::string& path)
 	return ok;
 }/*}}}*/
 
-// Read one line from the console in cooked mode; used for interactive prompts.
+// Read one line from the console in cooked mode, used for interactive prompts.
 static bool convey_prompt_line(const char* prompt, std::string& out)
 {/*{{{*/
 	std::cout << "\r\n" << prompt << std::flush;
@@ -1763,7 +1763,7 @@ static void convey_quit(int code)
 	ExitProcess(static_cast<UINT>(code));
 }/*}}}*/
 
-// Feed received bytes to the --exit-on matcher; exit 0 on the first match.
+// Feed received bytes to the --exit-on matcher, exit 0 on the first match.
 static void convey_exit_feed(const char* buf, DWORD bytes)
 {/*{{{*/
 	if (!have_exit || exit_matched) {
@@ -1781,8 +1781,8 @@ static void convey_exit_feed(const char* buf, DWORD bytes)
 	}
 }/*}}}*/
 
-// Drive the --expect/--reply sequence: on each step's match send its reply and
-// advance; the session continues after the last step.
+// Drive the --expect/--reply sequence. On each step's match send its reply and
+// advance, the session continues after the last step.
 static void convey_expect_feed(const char* buf, DWORD bytes)
 {/*{{{*/
 	if (expect_steps.empty() || expect_idx >= expect_steps.size()) {
@@ -1887,7 +1887,7 @@ static void convey_do_command(char cmd)
 			logging_on = !logging_on;
 			std::cout << "\r\nconvey: logging " << (logging_on ? "on" : "off") << "\r\n" << std::flush;
 		} else {
-			// No log configured yet: start one under an auto-named file.
+			// No log configured yet, start one under an automatically named file.
 			auto pad = [](unsigned v, size_t w) {
 				std::string s = std::to_string(v);
 				return std::string(w > s.size() ? w - s.size() : 0, '0') + s;
@@ -1979,7 +1979,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		if (is_console) {
 			setup_console();
 
-			// conf.escape is a control byte; OR 0x40 back to its letter.
+			// conf.escape is a control byte, OR 0x40 back to its letter.
 			char k = static_cast<char>(conf.escape | 0x40);
 			std::cerr << "convey: press Ctrl+" << k << " then ? for the list of commands\r\n";
 
