@@ -560,31 +560,31 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("-d,--dev", dev, "Path to the named pipe or COM device.")->group("Connection")->type_name("PATH");
 	app.add_option("-p,--poll", poll, "Poll pipe for N seconds on startup.")->group("Connection")->capture_default_str()->type_name("SECONDS");
 	app.add_flag("--reconnect", reconnect, "Try to reconnect after connection loss.")->group("Connection");
-	app.add_option("--max-retries", max_retries, "Give up reconnecting after N attempts (0 = unlimited).")->group("Connection")->capture_default_str()->type_name("N");
+	app.add_option("--max-retries", max_retries, "Give up reconnecting after N attempts, 0 means unlimited.")->group("Connection")->capture_default_str()->type_name("N");
 	app.add_flag("--list-serial-ports", list_ports, "List available serial ports and exit.")->group("Connection");
 	app.add_option("--send-file", send_file, "Stream a file to the target after connecting.")->group("Connection")->type_name("FILE");
 	app.add_option("--send-delay", send_delay, "Delay in ms between sent lines when sending a file.")->group("Connection")->capture_default_str()->type_name("MS");
-	app.add_option("--send-init", send_init_arg, "Send this string after each connect (\\r, \\n, \\xHH escapes).")->group("Connection")->type_name("STR");
+	app.add_option("--send-init", send_init_arg, "Send this string after each connect, with \\r \\n and \\xHH escapes.")->group("Connection")->type_name("STR");
 	app.add_option("--exit-on", exit_arg, "Exit once this regex appears in the received stream.")->group("Connection")->type_name("REGEX");
-	app.add_option("--exit-timeout", exit_timeout, "Exit with an error if --exit-on is not seen in N seconds (0 = wait forever).")->group("Connection")->capture_default_str()->type_name("SEC");
-	app.add_option("--expect", expect_pats, "Wait for this regex, then send the matching --reply (repeatable).")->group("Connection")->type_name("REGEX")->allow_extra_args(false);
-	app.add_option("--reply", expect_replies, "Reply to send when the matching --expect is seen (escapes allowed).")->group("Connection")->type_name("STR")->allow_extra_args(false);
+	app.add_option("--exit-timeout", exit_timeout, "Exit with an error if --exit-on is not seen in N seconds, 0 waits forever.")->group("Connection")->capture_default_str()->type_name("SEC");
+	app.add_option("--expect", expect_pats, "Wait for this regex, then send the matching --reply, repeatable.")->group("Connection")->type_name("REGEX")->allow_extra_args(false);
+	app.add_option("--reply", expect_replies, "Reply to send when the matching --expect is seen, escapes allowed.")->group("Connection")->type_name("STR")->allow_extra_args(false);
 	app.add_option("--expect-timeout", expect_timeout, "Fail if the --expect sequence is not completed in N seconds.")->group("Connection")->capture_default_str()->type_name("SEC");
 
 	app.add_option("-b,--baud", baud, "Baud rate in bps for serial, a standard or custom rate the device supports.")->group("Serial")->capture_default_str()->type_name("RATE");
 	app.add_option("--byte-size", byte_size, "The number of bits in a byte.")->group("Serial")->capture_default_str()->type_name("BITS");
-	app.add_option("--parity", parity, "Parity scheme (even, mark, no, odd, space).")->group("Serial")->capture_default_str()->type_name("SCHEME");
-	app.add_option("--stop-bits", stop_bits, "Stop bits (1, 1.5, 2).")->group("Serial")->capture_default_str()->type_name("BITS");
+	app.add_option("--parity", parity, "Parity scheme: even, mark, no, odd, space.")->group("Serial")->capture_default_str()->type_name("SCHEME");
+	app.add_option("--stop-bits", stop_bits, "Stop bits: 1, 1.5, 2.")->group("Serial")->capture_default_str()->type_name("BITS");
 	app.add_option("--break-ms", break_ms, "How long the ctrl-a b serial BREAK is held, in ms.")->group("Serial")->capture_default_str()->type_name("MS");
 	app.add_option("--reset-ms", reset_ms, "How long a DTR or RTS pulse deasserts the line, in ms.")->group("Serial")->capture_default_str()->type_name("MS");
-	app.add_option("--flow-control", flow_control, "Flow control (none, xon/xoff, rts/cts, dsr/dtr).")->group("Serial")->capture_default_str()->type_name("MODE");
-	app.add_option("--dtr", dtr_arg, "Set the serial DTR line (on, off, pulse).")->group("Serial")->type_name("STATE");
-	app.add_option("--rts", rts_arg, "Set the serial RTS line (on, off, pulse).")->group("Serial")->type_name("STATE");
+	app.add_option("--flow-control", flow_control, "Flow control: none, xon/xoff, rts/cts, dsr/dtr.")->group("Serial")->capture_default_str()->type_name("MODE");
+	app.add_option("--dtr", dtr_arg, "Set the serial DTR line: on, off, pulse.")->group("Serial")->type_name("STATE");
+	app.add_option("--rts", rts_arg, "Set the serial RTS line: on, off, pulse.")->group("Serial")->type_name("STATE");
 
-	app.add_flag("--bridge", bridge, "Bridge mode: pump raw bytes between a pipe server and the endpoint.")->group("Bridge");
-	app.add_option("--pipe-server", pipe_server, "Create a named pipe server with this name (bridge mode).")->group("Bridge")->type_name("NAME");
+	app.add_flag("--bridge", bridge, "Bridge mode, pump raw bytes between a pipe server and the endpoint.")->group("Bridge");
+	app.add_option("--pipe-server", pipe_server, "Create a named pipe server with this name for bridge mode.")->group("Bridge")->type_name("NAME");
 
-	app.add_option("--log", log_path, "Log the full session to a file, each block marked > (sent) or < (received).")->group("Logging")->type_name("FILE");
+	app.add_option("--log", log_path, "Log the full session to a file, each block marked > for sent or < for received.")->group("Logging")->type_name("FILE");
 	app.add_option("--log-recv", log_recv_path, "Log only the received stream to a file.")->group("Logging")->type_name("FILE");
 	app.add_option("--log-send", log_send_path, "Log only the sent stream to a file.")->group("Logging")->type_name("FILE");
 	app.add_flag("--log-append", log_append, "Append to the log files instead of overwriting them.")->group("Logging");
@@ -594,7 +594,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_flag("--timestamps", timestamps, "Prefix each received line with a local time stamp.")->group("General");
 	app.add_flag("--hex", hex, "Show the received stream as a hex dump instead of text.")->group("General");
 	app.add_flag("--local-echo", local_echo, "Echo typed input locally for targets that do not echo.")->group("General");
-	app.add_option("--escape", escape_arg, "Escape key for the ctrl-a commands (^A, ctrl-], ...).")->group("General")->type_name("KEY");
+	app.add_option("--escape", escape_arg, "Escape key for the ctrl-a commands, for example ^A or ctrl-].")->group("General")->type_name("KEY");
 	app.add_flag("--raw", eol_raw, "Send input with no newline translation. Excludes --lf, --crlf.")->group("General");
 	app.add_flag("--lf", eol_lf, "Translate sent CRLF newlines to LF. Excludes --raw, --crlf.")->group("General");
 	app.add_flag("--crlf", eol_crlf, "Translate sent LF newlines to CRLF. Excludes --raw, --lf.")->group("General");
@@ -1933,7 +1933,7 @@ static void convey_do_command(char cmd)
 		std::cout << "\r\nconvey: " << tp << " " << conf.pipe_path << ", "
 			<< (INVALID_HANDLE_VALUE == pipe ? "disconnected" : "connected")
 			<< ", hex " << (hex_on ? "on" : "off")
-			<< ", read-only " << (conf.read_only ? "on" : "off")
+			<< ", read only " << (conf.read_only ? "on" : "off")
 			<< ", rx " << bytes_rx.load() << ", tx " << bytes_tx.load()
 			<< ", up " << convey_fmt_uptime(GetTickCount64() - conn_since.load()) << "\r\n" << std::flush;
 		break;
