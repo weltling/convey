@@ -214,6 +214,7 @@ struct convey_conf {
 	bool hex;
 	convey_eol eol;
 	bool reconnect;
+	bool wait;
 	uint32_t max_retries;
 	convey_line dtr;
 	convey_line rts;
@@ -540,6 +541,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	uint32_t reset_ms = 120;
 	double poll = 0.0;
 	bool bridge = false, reconnect = false, no_xterm = false, read_only = false, timestamps = false, hex = false, log_append = false, verbose = false;
+	bool wait = false;
 	bool eol_raw = false, eol_lf = false, eol_crlf = false;
 	bool list_ports = false;
 	bool help_keys = false;
@@ -560,6 +562,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	app.add_option("-d,--dev", dev, "Path to the named pipe or COM device.")->group("Connection")->type_name("PATH");
 	app.add_option("-p,--poll", poll, "Poll pipe for N seconds on startup.")->group("Connection")->capture_default_str()->type_name("SECONDS");
 	app.add_flag("--reconnect", reconnect, "Try to reconnect after connection loss.")->group("Connection");
+	app.add_flag("--wait", wait, "Wait for the endpoint to appear at startup, retrying forever.")->group("Connection");
 	app.add_option("--max-retries", max_retries, "Give up reconnecting after N attempts, 0 means unlimited.")->group("Connection")->capture_default_str()->type_name("N");
 	app.add_flag("--list-serial-ports", list_ports, "List available serial ports and exit.")->group("Connection");
 	app.add_option("--send-file", send_file, "Stream a file to the target after connecting.")->group("Connection")->type_name("FILE");
@@ -675,6 +678,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	}
 	conf.eol = eol_crlf ? convey_eol_crlf : eol_lf ? convey_eol_lf : eol_raw ? convey_eol_raw : convey_eol_auto;
 	conf.reconnect = reconnect;
+	conf.wait = wait;
 	conf.max_retries = max_retries;
 
 	conf.escape = 0x01;
@@ -1307,19 +1311,23 @@ static convey_setup_status convey_connect(int argc, char **argv)
 
 		/* On a reconnect after a drop keep retrying with exponential backoff,
 		 * bounded by --max-retries. The initial connect stays within the
-		 * --poll window. */
+		 * --poll window, or forever when --wait is set. */
 		bool retry;
 		if (is_reconnect && conf.reconnect) {
 			++attempts;
 			retry = 0 == conf.max_retries || attempts < conf.max_retries;
 		} else {
-			retry = elapsed/1000 < conf.pipe_poll;
+			retry = conf.wait || elapsed/1000 < conf.pipe_poll;
 		}
 		if (!retry) {
 			break;
 		}
-		if (is_reconnect && !announced) {
-			std::cerr << "convey: reconnecting...\r\n";
+		if (!announced && (is_reconnect || conf.wait)) {
+			if (is_reconnect) {
+				std::cerr << "convey: reconnecting...\r\n";
+			} else {
+				std::cerr << "convey: waiting for '" << conf.pipe_path << "'\r\n";
+			}
 			announced = true;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(step));
@@ -1333,6 +1341,8 @@ static convey_setup_status convey_connect(int argc, char **argv)
 	}
 	if (is_reconnect) {
 		std::cerr << "convey: reconnected\r\n";
+	} else if (conf.wait && announced) {
+		std::cerr << "convey: connected\r\n";
 	}
 	if (conf.verbose) {
 		std::cout << "Connection established in " << (elapsed/1000) << " seconds" << std::endl;
