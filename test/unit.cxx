@@ -302,7 +302,13 @@ int main()
 		EXPECT(conf.flow_control == convey_flow_control_none);
 		EXPECT(conf.break_ms == 300);
 		EXPECT(conf.reset_ms == 120);
+		EXPECT(!conf.wait);
 		EXPECT(!restart_on_exit);
+	}
+	{
+		// --wait enables the indefinite startup wait.
+		EXPECT(run_setup({"convey", "--wait", "COM1"}) == convey_setup_ok);
+		EXPECT(conf.wait);
 	}
 	{
 		// Serial parameters are parsed and mapped.
