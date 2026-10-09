@@ -153,6 +153,8 @@ With `--reconnect` convey reestablishes the connection after it drops and resume
 
 The related `--poll` option keeps retrying the initial connection for the given number of seconds before the session begins.
 
+Pass `--wait` to wait for the endpoint to appear at startup, retrying forever instead of for a fixed number of seconds. Convey prints `waiting for '<endpoint>'` and then `connected` once it is reachable. This is handy for a serial device that is not plugged in yet, or a listener that starts later.
+
 
 # Commands
 
