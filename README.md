@@ -103,6 +103,24 @@ Convey also speaks AF_UNIX stream sockets, which are available on Windows 10 bui
 The `<path>` is a normal filesystem path. The listener removes a stale socket file before it binds and removes its own socket file on exit. Only stream sockets on a filesystem path are supported. Windows has no abstract sockets. The `--poll` and `--reconnect` options apply here as they do for TCP.
 
 
+# Relay between two endpoints
+
+`--relay` pumps raw bytes in both directions between any two endpoints, with no console and no serial control. It generalizes the bridge, which is the special case of a pipe server relayed to one other endpoint. Use it to expose one transport over another, for example a serial port over TCP or a TCP service over a named pipe.
+
+- `convey.exe --relay <A> <B>` opens endpoint A, then endpoint B, and relays bytes until either side closes.
+
+Each endpoint is one of these forms:
+
+- `tcp:<host>:<port>` connects out to a TCP server.
+- `tcp-listen:<port>` accepts one incoming TCP connection.
+- `unix:<path>` connects to a listening AF_UNIX socket.
+- `unix-listen:<path>` creates an AF_UNIX socket and accepts one connection.
+- `pipe-listen:<name>` creates a named pipe server and waits for a client, for example `pipe-listen:\\.\pipe\kd0`.
+- A bare path such as `\\.\pipe\<name>` or `\\.\COM<n>` opens an existing pipe or serial port.
+
+A listening endpoint blocks until its peer arrives, so a client that must reach endpoint A should connect before endpoint B is opened. Serial endpoints open with their current port settings, since the serial options apply to the interactive console rather than to a relay. For example, `convey.exe --relay pipe-listen:\\.\pipe\kd0 tcp:dbg-host:5555` matches the bridge used for kernel debugging.
+
+
 # Logging
 
 Convey can log the session to a file, for example to keep a boot or panic log that would otherwise scroll away. `--log` captures the full session. The received stream already includes what you type on an echoing console, but a target that does not echo, or a one way stream, needs the sent stream too.
