@@ -383,6 +383,47 @@ function Test-Bridge {
 }
 #endregion
 
+#region Relay
+function Test-Relay {
+    # Relay two TCP listeners. Endpoint A is opened first, so connect to it
+    # before endpoint B, then pump bytes both ways between the two clients.
+    $p1 = Get-FreePort
+    $p2 = Get-FreePort
+    $p = Start-Process -FilePath $Convey `
+        -ArgumentList "--relay", "tcp-listen:$p1", "tcp-listen:$p2" `
+        -PassThru -NoNewWindow
+    try {
+        Start-Sleep -Milliseconds 600
+        $ca = [System.Net.Sockets.TcpClient]::new()
+        $ca.Connect('127.0.0.1', $p1)
+        $sa = $ca.GetStream()
+
+        Start-Sleep -Milliseconds 400
+        $cb = [System.Net.Sockets.TcpClient]::new()
+        $cb.Connect('127.0.0.1', $p2)
+        $sb = $cb.GetStream()
+        Start-Sleep -Milliseconds 400
+
+        $a = "a-to-b-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $ab = [System.Text.Encoding]::ASCII.GetBytes($a)
+        $sa.Write($ab, 0, $ab.Length); $sa.Flush()
+        Start-Sleep -Milliseconds 300
+        Assert-Equal $a (Read-Text $sb 256 3000) 'relay: A -> B'
+
+        $b = "b-to-a-" + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $bb = [System.Text.Encoding]::ASCII.GetBytes($b)
+        $sb.Write($bb, 0, $bb.Length); $sb.Flush()
+        Start-Sleep -Milliseconds 300
+        Assert-Equal $b (Read-Text $sa 256 3000) 'relay: B -> A'
+
+        $ca.Close()
+        $cb.Close()
+    } finally {
+        Stop-Proc $p
+    }
+}
+#endregion
+
 #region Reconnect
 function Test-TcpClientReconnect {
     # convey connects out with --reconnect; its stdin is an open, idle pipe.
@@ -964,6 +1005,7 @@ $tests = @(
     'Test-TcpListenIPv6'
     'Test-UnixRoundTrip'
     'Test-Bridge'
+    'Test-Relay'
     'Test-TcpClientReconnect'
     'Test-ReconnectStatus'
     'Test-ReadOnly'

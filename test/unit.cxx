@@ -94,6 +94,17 @@ int main()
 		EXPECT(!s.ok);
 		EXPECT(s.kind == convey_tp_unix_server);
 	}
+	{
+		convey_transport_spec s = convey_parse_transport("pipe-listen:\\\\.\\pipe\\relay");
+		EXPECT(s.ok);
+		EXPECT(s.kind == convey_tp_pipe_server);
+		EXPECT(s.host == "\\\\.\\pipe\\relay");
+	}
+	{
+		convey_transport_spec s = convey_parse_transport("pipe-listen:");
+		EXPECT(!s.ok);
+		EXPECT(s.kind == convey_tp_pipe_server);
+	}
 
 	EXPECT(convey_parity_from_string("even") == EVENPARITY);
 	EXPECT(convey_parity_from_string("NO") == NOPARITY);
@@ -354,6 +365,15 @@ int main()
 		EXPECT(conf.bridge);
 		EXPECT(conf.bridge_pipe_name == "\\\\.\\pipe\\b");
 		EXPECT(restart_on_exit);
+	}
+	{
+		// --relay takes two endpoint specs and sets relay mode.
+		EXPECT(run_setup({"convey", "--relay", "tcp-listen:5000", "tcp:127.0.0.1:9"}) == convey_setup_ok);
+		EXPECT(conf.relay);
+		EXPECT(conf.relay_a == "tcp-listen:5000");
+		EXPECT(conf.relay_b == "tcp:127.0.0.1:9");
+		// A bad relay endpoint is rejected.
+		EXPECT(run_setup({"convey", "--relay", "tcp:nohost", "tcp:127.0.0.1:9"}) == convey_setup_exit_err);
 	}
 	{
 		// Log options land in the right fields.
