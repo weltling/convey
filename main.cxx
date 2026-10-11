@@ -106,7 +106,8 @@ enum convey_transport {
 	convey_tp_tcp_client,
 	convey_tp_tcp_server,
 	convey_tp_unix_client,
-	convey_tp_unix_server
+	convey_tp_unix_server,
+	convey_tp_pipe_server
 };
 
 enum convey_eol {
@@ -138,6 +139,7 @@ static convey_transport_spec convey_parse_transport(const std::string& spec)
 	const std::string tcpl_pfx = "tcp-listen:";
 	const std::string unix_pfx = "unix:";
 	const std::string unixl_pfx = "unix-listen:";
+	const std::string pipel_pfx = "pipe-listen:";
 
 	if (0 == spec.compare(0, tcpl_pfx.size(), tcpl_pfx)) {
 		r.kind = convey_tp_tcp_server;
@@ -160,6 +162,10 @@ static convey_transport_spec convey_parse_transport(const std::string& spec)
 	} else if (0 == spec.compare(0, unix_pfx.size(), unix_pfx)) {
 		r.kind = convey_tp_unix_client;
 		r.host = spec.substr(unix_pfx.size());
+		r.ok = !r.host.empty();
+	} else if (0 == spec.compare(0, pipel_pfx.size(), pipel_pfx)) {
+		r.kind = convey_tp_pipe_server;
+		r.host = spec.substr(pipel_pfx.size());
 		r.ok = !r.host.empty();
 	}
 
@@ -239,6 +245,9 @@ struct convey_conf {
 	std::string tcp_port;
 	bool bridge;
 	std::string bridge_pipe_name;
+	bool relay;
+	std::string relay_a;
+	std::string relay_b;
 	std::string log_path;
 	std::string log_recv_path;
 	std::string log_send_path;
@@ -536,6 +545,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	std::string log_path, log_recv_path, log_send_path, pipe_server;
 	std::string parity = "no", stop_bits = "1", flow_control = "none";
 	std::string dtr_arg, rts_arg;
+	std::vector<std::string> relay;
 	uint32_t baud = CBR_115200, byte_size = 8;
 	uint32_t break_ms = 300;
 	uint32_t reset_ms = 120;
@@ -586,6 +596,7 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 
 	app.add_flag("--bridge", bridge, "Bridge mode, pump raw bytes between a pipe server and the endpoint.")->group("Bridge");
 	app.add_option("--pipe-server", pipe_server, "Create a named pipe server with this name for bridge mode.")->group("Bridge")->type_name("NAME");
+	app.add_option("--relay", relay, "Relay raw bytes between two endpoints A and B, no console.")->group("Bridge")->type_name("A B")->expected(2)->allow_extra_args(false);
 
 	app.add_option("--log", log_path, "Log the full session to a file, each block marked > for sent or < for received.")->group("Logging")->type_name("FILE");
 	app.add_option("--log-recv", log_recv_path, "Log only the received stream to a file.")->group("Logging")->type_name("FILE");
@@ -638,6 +649,21 @@ static convey_setup_status convey_conf_setup(int argc, char **argv)
 	}
 
 	conf.verbose = verbose;
+
+	if (!relay.empty()) {
+		conf.relay = true;
+		conf.relay_a = relay[0];
+		conf.relay_b = relay[1];
+		if (!convey_parse_transport(conf.relay_a).ok) {
+			std::cerr << argv[0] << ": invalid relay endpoint '" << conf.relay_a << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+		if (!convey_parse_transport(conf.relay_b).ok) {
+			std::cerr << argv[0] << ": invalid relay endpoint '" << conf.relay_b << "'" << std::endl;
+			return convey_setup_exit_err;
+		}
+		return convey_setup_ok;
+	}
 
 	if (!dev.empty()) {
 		conf.pipe_path = dev;
@@ -1101,9 +1127,9 @@ static SOCKET convey_tcp_connect(const std::string& host, const std::string& por
 	return s;
 }/*}}}*/
 
-static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
+static SOCKET convey_tcp_accept(const std::string& port, SOCKET& listen_s, DWORD& err)
 {/*{{{*/
-	if (INVALID_SOCKET == listen_sock) {
+	if (INVALID_SOCKET == listen_s) {
 		struct addrinfo hints;
 		struct addrinfo *res = nullptr;
 		memset(&hints, 0, sizeof hints);
@@ -1118,38 +1144,38 @@ static SOCKET convey_tcp_accept(const std::string& port, DWORD& err)
 			return INVALID_SOCKET;
 		}
 
-		listen_sock = WSASocketW(res->ai_family, res->ai_socktype, res->ai_protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
-		if (INVALID_SOCKET == listen_sock) {
+		listen_s = WSASocketW(res->ai_family, res->ai_socktype, res->ai_protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
+		if (INVALID_SOCKET == listen_s) {
 			err = WSAGetLastError();
 			freeaddrinfo(res);
 			return INVALID_SOCKET;
 		}
 
 		BOOL reuse = TRUE;
-		setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof reuse);
+		setsockopt(listen_s, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&reuse), sizeof reuse);
 
 		/* Accept both IPv6 and IPv4-mapped connections. */
 		DWORD v6only = 0;
-		setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char *>(&v6only), sizeof v6only);
+		setsockopt(listen_s, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char *>(&v6only), sizeof v6only);
 
-		if (0 != bind(listen_sock, res->ai_addr, static_cast<int>(res->ai_addrlen))) {
+		if (0 != bind(listen_s, res->ai_addr, static_cast<int>(res->ai_addrlen))) {
 			err = WSAGetLastError();
 			freeaddrinfo(res);
-			closesocket(listen_sock);
-			listen_sock = INVALID_SOCKET;
+			closesocket(listen_s);
+			listen_s = INVALID_SOCKET;
 			return INVALID_SOCKET;
 		}
 		freeaddrinfo(res);
 
-		if (0 != listen(listen_sock, 1)) {
+		if (0 != listen(listen_s, 1)) {
 			err = WSAGetLastError();
-			closesocket(listen_sock);
-			listen_sock = INVALID_SOCKET;
+			closesocket(listen_s);
+			listen_s = INVALID_SOCKET;
 			return INVALID_SOCKET;
 		}
 	}
 
-	SOCKET s = accept(listen_sock, nullptr, nullptr);
+	SOCKET s = accept(listen_s, nullptr, nullptr);
 	if (INVALID_SOCKET == s) {
 		err = WSAGetLastError();
 		return INVALID_SOCKET;
@@ -1193,9 +1219,9 @@ static SOCKET convey_unix_connect(const std::string& path, DWORD& err)
 	return s;
 }/*}}}*/
 
-static SOCKET convey_unix_accept(const std::string& path, DWORD& err)
+static SOCKET convey_unix_accept(const std::string& path, SOCKET& listen_s, DWORD& err)
 {/*{{{*/
-	if (INVALID_SOCKET == listen_sock) {
+	if (INVALID_SOCKET == listen_s) {
 		struct sockaddr_un addr;
 		if (!convey_unix_set_addr(addr, path, err)) {
 			return INVALID_SOCKET;
@@ -1204,32 +1230,147 @@ static SOCKET convey_unix_accept(const std::string& path, DWORD& err)
 		/* A stale socket file blocks bind, so remove it first. */
 		DeleteFileA(path.c_str());
 
-		listen_sock = WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
-		if (INVALID_SOCKET == listen_sock) {
+		listen_s = WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
+		if (INVALID_SOCKET == listen_s) {
 			err = WSAGetLastError();
 			return INVALID_SOCKET;
 		}
-		if (0 != bind(listen_sock, reinterpret_cast<struct sockaddr *>(&addr), sizeof addr)) {
+		if (0 != bind(listen_s, reinterpret_cast<struct sockaddr *>(&addr), sizeof addr)) {
 			err = WSAGetLastError();
-			closesocket(listen_sock);
-			listen_sock = INVALID_SOCKET;
+			closesocket(listen_s);
+			listen_s = INVALID_SOCKET;
 			return INVALID_SOCKET;
 		}
-		if (0 != listen(listen_sock, 1)) {
+		if (0 != listen(listen_s, 1)) {
 			err = WSAGetLastError();
-			closesocket(listen_sock);
-			listen_sock = INVALID_SOCKET;
+			closesocket(listen_s);
+			listen_s = INVALID_SOCKET;
 			return INVALID_SOCKET;
 		}
 	}
 
-	SOCKET s = accept(listen_sock, nullptr, nullptr);
+	SOCKET s = accept(listen_s, nullptr, nullptr);
 	if (INVALID_SOCKET == s) {
 		err = WSAGetLastError();
 		return INVALID_SOCKET;
 	}
 
 	return s;
+}/*}}}*/
+
+// One side of a relay. The handle carries a socket or a pipe or serial handle.
+struct convey_endpoint {
+	std::string spec;
+	HANDLE h = INVALID_HANDLE_VALUE;
+	SOCKET listen = INVALID_SOCKET;
+	bool is_socket = false;
+	bool is_pipe_server = false;
+	std::string unix_path;
+};
+
+// Open any supported endpoint spec into a handle. Servers block until a peer
+// arrives. Serial endpoints open with their current port settings.
+static bool convey_open_endpoint(convey_endpoint& ep, DWORD& err)
+{/*{{{*/
+	convey_transport_spec ts = convey_parse_transport(ep.spec);
+	if (!ts.ok) {
+		err = ERROR_INVALID_PARAMETER;
+		return false;
+	}
+	switch (ts.kind) {
+	case convey_tp_tcp_client: {
+		SOCKET s = convey_tcp_connect(ts.host, ts.port, err);
+		if (INVALID_SOCKET == s) return false;
+		ep.h = reinterpret_cast<HANDLE>(s);
+		ep.is_socket = true;
+		return true;
+	}
+	case convey_tp_tcp_server: {
+		SOCKET s = convey_tcp_accept(ts.port, ep.listen, err);
+		if (INVALID_SOCKET == s) return false;
+		ep.h = reinterpret_cast<HANDLE>(s);
+		ep.is_socket = true;
+		return true;
+	}
+	case convey_tp_unix_client: {
+		SOCKET s = convey_unix_connect(ts.host, err);
+		if (INVALID_SOCKET == s) return false;
+		ep.h = reinterpret_cast<HANDLE>(s);
+		ep.is_socket = true;
+		return true;
+	}
+	case convey_tp_unix_server: {
+		SOCKET s = convey_unix_accept(ts.host, ep.listen, err);
+		if (INVALID_SOCKET == s) return false;
+		ep.h = reinterpret_cast<HANDLE>(s);
+		ep.is_socket = true;
+		ep.unix_path = ts.host;
+		return true;
+	}
+	case convey_tp_pipe_server: {
+		HANDLE p = CreateNamedPipe(ts.host.c_str(),
+			PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+			PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+			1, BUF_SIZE, BUF_SIZE, 0, nullptr);
+		if (INVALID_HANDLE_VALUE == p) {
+			err = GetLastError();
+			return false;
+		}
+		OVERLAPPED ov;
+		memset(&ov, 0, sizeof ov);
+		ov.hEvent = CreateEvent(nullptr, true, false, nullptr);
+		BOOL connected = ConnectNamedPipe(p, &ov);
+		DWORD cer = GetLastError();
+		if (!connected) {
+			if (ERROR_IO_PENDING == cer) {
+				WaitForSingleObject(ov.hEvent, INFINITE);
+				connected = TRUE;
+			} else if (ERROR_PIPE_CONNECTED == cer) {
+				connected = TRUE;
+			}
+		}
+		CloseHandle(ov.hEvent);
+		if (!connected) {
+			err = cer;
+			CloseHandle(p);
+			return false;
+		}
+		ep.h = p;
+		ep.is_pipe_server = true;
+		return true;
+	}
+	default: {
+		HANDLE p = CreateFile(ep.spec.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+		if (INVALID_HANDLE_VALUE == p) {
+			err = GetLastError();
+			return false;
+		}
+		ep.h = p;
+		return true;
+	}
+	}
+}/*}}}*/
+
+static void convey_close_endpoint(convey_endpoint& ep)
+{/*{{{*/
+	if (ep.is_socket) {
+		if (INVALID_HANDLE_VALUE != ep.h) {
+			closesocket(reinterpret_cast<SOCKET>(ep.h));
+		}
+	} else if (INVALID_HANDLE_VALUE != ep.h) {
+		if (ep.is_pipe_server) {
+			DisconnectNamedPipe(ep.h);
+		}
+		CloseHandle(ep.h);
+	}
+	ep.h = INVALID_HANDLE_VALUE;
+	if (INVALID_SOCKET != ep.listen) {
+		closesocket(ep.listen);
+		ep.listen = INVALID_SOCKET;
+	}
+	if (!ep.unix_path.empty()) {
+		DeleteFileA(ep.unix_path.c_str());
+	}
 }/*}}}*/
 
 // Next backoff delay in ms, double the step, clamped to the cap.
@@ -1289,7 +1430,7 @@ static convey_setup_status convey_connect(int argc, char **argv)
 			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
 			conn_error = INVALID_HANDLE_VALUE == pipe;
 		} else if (convey_tp_tcp_server == conf.transport) {
-			SOCKET s = convey_tcp_accept(conf.tcp_port, rc);
+			SOCKET s = convey_tcp_accept(conf.tcp_port, listen_sock, rc);
 			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
 			conn_error = INVALID_HANDLE_VALUE == pipe;
 		} else if (convey_tp_unix_client == conf.transport) {
@@ -1297,7 +1438,7 @@ static convey_setup_status convey_connect(int argc, char **argv)
 			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
 			conn_error = INVALID_HANDLE_VALUE == pipe;
 		} else if (convey_tp_unix_server == conf.transport) {
-			SOCKET s = convey_unix_accept(conf.tcp_host, rc);
+			SOCKET s = convey_unix_accept(conf.tcp_host, listen_sock, rc);
 			pipe = (INVALID_SOCKET == s) ? INVALID_HANDLE_VALUE : reinterpret_cast<HANDLE>(s);
 			conn_error = INVALID_HANDLE_VALUE == pipe;
 		} else {
@@ -1980,7 +2121,7 @@ static convey_setup_status convey_startup(int argc, char **argv)
 		return rc;
 	}
 
-	if (!conf.bridge) {
+	if (!conf.bridge && !conf.relay) {
 		in = GetStdHandle(STD_INPUT_HANDLE);
 		out = GetStdHandle(STD_OUTPUT_HANDLE);
 		in_is_pipe = GetFileType(in) == FILE_TYPE_PIPE;
@@ -2030,6 +2171,98 @@ static convey_setup_status convey_startup(int argc, char **argv)
 	return convey_setup_ok;
 }/*}}}*/
 
+// Relay raw bytes in both directions between two endpoints until either side
+// closes or errors. No console, no serial control, just a byte pump.
+static int convey_run_relay(void)
+{/*{{{*/
+	convey_wsa_init();
+
+	convey_endpoint ea, eb;
+	ea.spec = conf.relay_a;
+	eb.spec = conf.relay_b;
+
+	DWORD er = 0;
+	if (conf.verbose) {
+		std::cout << "convey: opening relay endpoint A '" << ea.spec << "'" << std::endl;
+	}
+	if (!convey_open_endpoint(ea, er)) {
+		convey_error(er);
+		convey_close_endpoint(ea);
+		return 1;
+	}
+	if (conf.verbose) {
+		std::cout << "convey: opening relay endpoint B '" << eb.spec << "'" << std::endl;
+	}
+	if (!convey_open_endpoint(eb, er)) {
+		convey_error(er);
+		convey_close_endpoint(ea);
+		convey_close_endpoint(eb);
+		return 1;
+	}
+
+	if (conf.verbose) {
+		std::cout << "convey: relaying '" << ea.spec << "' <-> '" << eb.spec << "'" << std::endl;
+	}
+
+	HANDLE ea_r = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+	HANDLE ea_w = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+	HANDLE eb_r = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+	HANDLE eb_w = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+
+	auto fail = [&]() {
+		is_error = true;
+		CancelIoEx(ea.h, nullptr);
+		CancelIoEx(eb.h, nullptr);
+	};
+
+	// A -> B
+	std::thread t_ab([&]() {
+		while (!is_error && !shutting_down) {
+			char buf[BUF_SIZE];
+			DWORD bytes = 0, er2 = 0;
+			bool rc = convey_read_pipe(ea.h, buf, &bytes, ea_r, er2);
+			if (!rc || (ea.is_socket && 0 == bytes)) {
+				fail();
+				return;
+			}
+			if (bytes && !convey_write_pipe(eb.h, buf, &bytes, eb_w, er2)) {
+				fail();
+				return;
+			}
+		}
+	});
+
+	// B -> A
+	std::thread t_ba([&]() {
+		while (!is_error && !shutting_down) {
+			char buf[BUF_SIZE];
+			DWORD bytes = 0, er2 = 0;
+			bool rc = convey_read_pipe(eb.h, buf, &bytes, eb_r, er2);
+			if (!rc || (eb.is_socket && 0 == bytes)) {
+				fail();
+				return;
+			}
+			if (bytes && !convey_write_pipe(ea.h, buf, &bytes, ea_w, er2)) {
+				fail();
+				return;
+			}
+		}
+	});
+
+	t_ab.join();
+	t_ba.join();
+
+	CloseHandle(ea_r);
+	CloseHandle(ea_w);
+	CloseHandle(eb_r);
+	CloseHandle(eb_w);
+
+	convey_close_endpoint(ea);
+	convey_close_endpoint(eb);
+
+	return is_error ? 1 : 0;
+}/*}}}*/
+
 int main(int argc, char** argv)
 {/*{{{*/
 
@@ -2042,6 +2275,10 @@ int main(int argc, char** argv)
 			return 1;
 		case convey_setup_exit_ok:
 			return 0;
+	}
+
+	if (conf.relay) {
+		return convey_run_relay();
 	}
 
 	if (have_exit && conf.exit_timeout > 0) {
